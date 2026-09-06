@@ -12,3 +12,7 @@ dist-ssr
 
 # Claude Code 個人設定
 .claude/settings.local.json
+
+# 參考圖，不入庫（見 docs/PLAN.md §8.1）
+/town.jpeg
+/doctor-avatar.jpeg

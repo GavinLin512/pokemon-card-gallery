@@ -107,8 +107,8 @@ export function createTown(canvas, opts) {
     uniforms: {
       top: { value: new Color('#79c2ff') },
       bottom: { value: new Color('#d9f0ff') },
-      ground: { value: new Color('#5aa84a') },
-      groundFar: { value: new Color('#6fbf5a') },
+      ground: { value: new Color('#7ccf7a') },
+      groundFar: { value: new Color('#a9e2a0') },
       horizon: { value: HORIZON }
     },
     depthTest: false,
@@ -274,8 +274,8 @@ export function createTown(canvas, opts) {
   function applyLook(l) {
     skyMaterial.uniforms.top.value.copy(l.skyTop)
     skyMaterial.uniforms.bottom.value.copy(l.skyBottom)
-    skyMaterial.uniforms.ground.value.set('#5aa84a').multiply(l.light)
-    skyMaterial.uniforms.groundFar.value.set('#6fbf5a').multiply(l.light)
+    skyMaterial.uniforms.ground.value.set('#7ccf7a').multiply(l.light)
+    skyMaterial.uniforms.groundFar.value.set('#a9e2a0').multiply(l.light)
     starMaterial.opacity = l.stars
     for (const layer of layers) {
       const role = layer.cfg.role

@@ -11,19 +11,21 @@
 //   drift          雲朵每秒向右飄移像素
 //   role           night 只在夜晚顯示；haze 為清晨薄霧
 
-export const PARALLAX_PX = 60
+export const PARALLAX_PX = 90
 /** 地平線位置，相對視窗高度、從底部起算。地平線以下由天空 shader 畫地面漸層，任何長寬比都有地面。 */
 export const HORIZON = 0.42
 
 export const townLayers = [
-  { key: 'clouds-far', src: '', width: 2400, height: 600, depth: 0.1, parallax: 0.06, scrollFactor: 0.03, anchor: 'top', y: 0.03, drift: 4 },
+  { key: 'clouds-far', src: '', width: 2400, height: 600, depth: 0.1, parallax: 0.05, scrollFactor: 0.03, anchor: 'top', y: 0.03, drift: 4 },
   { key: 'moon', src: '', width: 400, height: 400, depth: 0.12, parallax: 0.04, scrollFactor: 0.02, anchor: 'top', y: 0.1, widthFrac: 0.09, x: 0.3, role: 'night' },
-  { key: 'mountains', src: '', width: 2400, height: 700, depth: 0.25, parallax: 0.12, scrollFactor: 0.06, anchor: 'horizon', y: -0.02 },
+  { key: 'treeline', src: '', width: 2400, height: 500, depth: 0.25, parallax: 0.1, scrollFactor: 0.05, anchor: 'horizon', y: -0.03 },
   { key: 'haze', src: '', width: 2400, height: 500, depth: 0.28, parallax: 0.1, scrollFactor: 0.06, anchor: 'horizon', y: -0.12, role: 'haze' },
-  { key: 'fields', src: '', width: 2400, height: 900, depth: 0.4, parallax: 0.18, scrollFactor: 0.1, anchor: 'horizon-top', y: 0.01 },
-  { key: 'lab', src: '', width: 1200, height: 900, depth: 0.5, parallax: 0.25, scrollFactor: 0.14, anchor: 'horizon', y: -0.05, widthFrac: 0.24, x: 0.3 },
-  { key: 'houses', src: '', width: 2400, height: 800, depth: 0.6, parallax: 0.35, scrollFactor: 0.2, anchor: 'horizon', y: -0.09, widthFrac: 0.55, x: -0.26 },
-  { key: 'houses-night', src: '', width: 2400, height: 800, depth: 0.61, parallax: 0.35, scrollFactor: 0.2, anchor: 'horizon', y: -0.09, widthFrac: 0.55, x: -0.26, role: 'night' },
+  { key: 'fields', src: '', width: 2400, height: 900, depth: 0.4, parallax: 0.16, scrollFactor: 0.1, anchor: 'horizon-top', y: 0.02 },
+  { key: 'lab', src: '', width: 1200, height: 900, depth: 0.5, parallax: 0.24, scrollFactor: 0.14, anchor: 'horizon', y: -0.06, widthFrac: 0.22, x: 0.3 },
+  { key: 'houses', src: '', width: 2400, height: 800, depth: 0.6, parallax: 0.34, scrollFactor: 0.2, anchor: 'horizon', y: -0.1, widthFrac: 0.42, x: -0.25 },
+  { key: 'houses-night', src: '', width: 2400, height: 800, depth: 0.61, parallax: 0.34, scrollFactor: 0.2, anchor: 'horizon', y: -0.1, widthFrac: 0.42, x: -0.25, role: 'night' },
+  { key: 'pond', src: '', width: 1200, height: 500, depth: 0.72, parallax: 0.42, scrollFactor: 0.24, anchor: 'bottom', y: 0.04, widthFrac: 0.3, x: -0.3 },
   { key: 'clouds-near', src: '', width: 2400, height: 500, depth: 0.7, parallax: 0.3, scrollFactor: 0.1, anchor: 'top', y: 0.14, drift: 8 },
-  { key: 'foreground-grass', src: '', width: 2400, height: 300, depth: 1, parallax: 0.55, scrollFactor: 0.3, anchor: 'bottom', y: -0.02 }
+  { key: 'trees-near', src: '', width: 2400, height: 700, depth: 0.85, parallax: 0.5, scrollFactor: 0.28, anchor: 'bottom', y: -0.01 },
+  { key: 'foreground-grass', src: '', width: 2400, height: 300, depth: 1, parallax: 0.6, scrollFactor: 0.32, anchor: 'bottom', y: -0.02 }
 ]

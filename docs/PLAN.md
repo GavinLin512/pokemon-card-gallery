@@ -231,12 +231,14 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 地平線 `HORIZON = 0.42`（相對視窗高度、從底部起算）。天空 shader 同時畫出地平線以下的地面漸層，
 因此任何長寬比都有地面，田野與前景草只是加在上面的裝飾層。星星只出現在地平線以上。
 
-預設圖層（由遠到近）：sky（漸層，不需素材）、clouds-far、mountains、fields、lab（大木研究所）、houses、clouds-near、foreground-grass。素材清單見 `public/town/README.md`。
+預設圖層（由遠到近）：sky（漸層，不需素材）、clouds-far、moon、treeline（遠景樹列）、haze、fields（草地點紋、沙路、花圃、柵欄）、lab（大木研究所）、houses、houses-night、pond（池塘與柵欄）、clouds-near、trees-near（左右框樹）、foreground-grass。
+佔位圖造型與配色參考遊戲版真新鎮俯視圖（`town.jpeg`，僅作參考不入庫）：橘紅屋頂灰藍牆民宅、黃磚牆灰瓦頂研究所、圓頂樹。素材清單見 `public/town/README.md`。
 
 ### 8.2 佔位場景
 
-素材未到時，每層以純色幾何體代替：天空漸層、白色橢圓雲、綠色三角遠山、綠色矩形田野、
-紅屋頂白牆民宅（兩棟）、白色圓頂研究所、前景深綠草帶。介面與互動須在佔位狀態下完整可用。
+素材未到時，每層以 Canvas 2D 幾何體代替：天空與地面漸層、雙色橢圓雲、圓頂樹列、草地點紋與沙路、
+2.5D 盒狀民宅（橘紅屋頂、灰藍牆、藍窗、紅門、信箱）、黃磚牆灰瓦研究所（紅色通風塔、圓窗、風車）、池塘、柵欄、花圃、前景草叢。
+介面與互動須在佔位狀態下完整可用。
 
 ### 8.3 視差
 
@@ -367,6 +369,6 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 
 ## 13. 待使用者提供
 
-- 真新鎮圖層素材（清單見 `public/town/README.md`）。
-- 大木博士頭像。
+- 真新鎮圖層素材（清單見 `public/town/README.md`）。目前以佔位圖運作。
+- 大木博士頭像：已提供並裁切為 `public/town/professor.png`（512×512，白底，2026-09-06）。
 - 部署目標（決定後只需確認 `base` 仍為 `/`）。
