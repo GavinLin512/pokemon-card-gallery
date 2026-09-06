@@ -35,7 +35,8 @@
 - 4 張卡渲染正常，`data-rarity`、`--rotate-x/--rotate-y` 隨滑鼠變化，`interacting` class 正確切換。
 - 點擊放大得到 `active` class 與 `--card-scale`，點擊外部後正常收合。
 - 唯一問題：`Card.svelte` 第 180 行在放大時呼叫全域 `gtag()`，沒有 GA 時拋 `gtag is not defined`。
-  解法：`src/main.js` 在掛載前定義 `window.gtag = window.gtag || (() => {})`。不改凍結區。
+  解法：`src/main.js` 在掛載前定義 `window.gtag`，將呼叫轉發為 `window` 的 `gtag` 事件；
+  `select_item` 事件同時提供放大卡牌的 id 與名稱，供捕捉與屬性天氣使用（DOM 只有 set 與 number）。不改凍結區。
 
 結論：不需退回 Svelte 4。
 
@@ -75,6 +76,8 @@ pokemon-card-gallery/
 │   │   ├── weather.js          屬性天氣對應表（§9.4）
 │   │   └── dayCycle.js         日夜時段與色票（§9.3）
 │   ├── stores/
+│   │   ├── search.svelte.js    搜尋狀態與查詢邏輯（中英文判斷、譯名查詢、fetch 重試）
+│   │   ├── cards.svelte.js     卡牌登錄表、cardId → sectionId、目前放大卡牌（由 gtag select_item 事件取得）
 │   │   ├── pokedex.svelte.js   我的圖鑑（localStorage）
 │   │   ├── dayCycle.svelte.js  目前時段（自動 + 手動覆寫）
 │   │   └── viewport.svelte.js  是否手機、reduced-motion、低效能旗標
@@ -85,15 +88,17 @@ pokemon-card-gallery/
 │   │   ├── Section.svelte      展示區：標題、博士對話框、卡牌格；延遲掛載
 │   │   ├── CardGrid.svelte     卡牌格（自原作 Cards.svelte 改寫，排版規則不變）
 │   │   ├── ProfessorDialog.svelte
-│   │   ├── Search.svelte       搜尋框與結果（自原作改寫，fetch 版）
+│   │   ├── Search.svelte       搜尋框（放在 TopBar；狀態在 stores/search.svelte.js）
+│   │   ├── SearchResults.svelte 搜尋結果（取代展示區顯示；卡牌下方標注中文名）
 │   │   ├── CaptureButton.svelte 精靈球按鈕與捕捉動畫觸發
 │   │   ├── PokedexDrawer.svelte
 │   │   └── Footer.svelte
 │   └── scene/
-│       ├── TownScene.svelte    掛載 canvas、管理 render loop 與降級
-│       ├── town.js             建立圖層、視差、雲朵、日夜光照
-│       ├── pokeball.js         精靈球飛行、晃動、閃星
-│       └── weather.js          屬性天氣粒子（單一 Points + shader）
+│       ├── TownScene.svelte    掛載 canvas、串接日夜／activeCard／orientation store（App 以動態 import 延後載入）
+│       ├── town.js             建立圖層、視差、雲朵、日夜光照過渡、render loop 與降級
+│       ├── placeholders.js     Canvas 2D 佔位圖與素材載入（縮到貼圖上限）
+│       ├── pokeball.js         精靈球飛行、吸入、晃動、閃星（DOM + Web Animations API，見 §9.1）
+│       └── weather.js          屬性天氣粒子（單一 Points + shader，運動全在頂點著色器）
 └── index.html                  凍結 CSS 連結清單、字型、meta
 ```
 
@@ -133,7 +138,7 @@ pokemon-card-gallery/
 
 訪客可直接輸入繁體中文寶可夢名稱。流程：
 
-1. **判斷模式**：輸入含任何 CJK 字元即進入中文模式，否則走 §6.2 的英文流程。
+1. **判斷模式**：輸入含任何 CJK 字元即進入中文模式，否則走 §6.2 的英文流程。中文模式最少 2 字即可查詢（超夢、快龍等兩字名很常見）。
 2. **查譯名對照**：在 `pokemonNames.json` 中比對 `zh` 與 `aliases`（含舊譯、簡體），排序為
    完全相符 > 前綴相符 > 子字串相符，最多取 **8** 隻。
 3. **組查詢**：`(set.id:swsh* AND (name:"Pikachu" OR name:"Raichu" OR …))`。
@@ -142,6 +147,7 @@ pokemon-card-gallery/
 4. **顯示**：結果卡牌名稱下方以小字顯示對應中文名（由英文名反查對照表，去掉 V、VMAX 等後綴後比對）。
 5. **查無對照**：顯示「譯名對照裡找不到「{輸入}」，請確認名稱或改用英文」，不呼叫 API。
 6. **API 重試**：pokemontcg.io 偶發 500，實作時對 5xx 以 1 秒、2 秒、4 秒退避重試三次，之後才顯示錯誤卡。
+   5xx 回應常缺 CORS 標頭，瀏覽器會以網路錯誤拋出，一併視為可重試；單次請求逾時 10 秒。
 
 placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu」。
 
@@ -155,7 +161,7 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
   `no, zh_tw, en, aliases`（別名以 `|` 分隔）。**要修改譯名請改這個檔**，不要改 md 或 json。
 - **建置**：`npm run build:names` 執行 `scripts/build-names.mjs`，讀 CSV 產生
   `src/config/pokemonNames.json`（精簡格式 `[{n,zh,en,a:[…]}]`，約 66KB，gzip 後約 25KB，
-  以動態 `import()` 在第一次進入中文模式時才載入）。
+  以動態 `import()` 在第一次搜尋時才載入；英文搜尋也載入，以便結果標注中文名）。
 - **驗證結果（2026-09-06）**：1025 隻全數解析，加上編號 0000「寶可夢」共 1026 筆，
   962 個別名，中文正式名無重複，別名不與其他寶可夢正式名衝突。
 - **已知限制**：對照表只有寶可夢本體名稱，訓練家卡（例如「瑪俐」）、地區型態（「伽勒爾 大蔥鴨」）
@@ -215,10 +221,15 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
   depth: 0.6,                // 0 最遠（天空）到 1 最近（前景草）
   parallax: 0.35,            // 滑鼠 / 陀螺儀位移係數
   scrollFactor: 0.2,         // 頁面捲動位移係數
-  anchor: 'bottom',          // 對齊視窗底部或頂部
-  y: 0.18                    // 相對視窗高度的偏移
+  anchor: 'horizon',         // top 貼視窗頂、bottom 貼視窗底、horizon 下緣貼地平線、horizon-top 上緣貼地平線
+  y: -0.09,                  // 相對視窗高度的偏移，正值向上
+  widthFrac: 0.55,           // 顯示寬度相對視窗寬度；全寬圖層預設 1.15 留視差空間
+  x: -0.26                   // 水平偏移，相對視窗寬度
 }
 ```
+
+地平線 `HORIZON = 0.42`（相對視窗高度、從底部起算）。天空 shader 同時畫出地平線以下的地面漸層，
+因此任何長寬比都有地面，田野與前景草只是加在上面的裝飾層。星星只出現在地平線以上。
 
 預設圖層（由遠到近）：sky（漸層，不需素材）、clouds-far、mountains、fields、lab（大木研究所）、houses、clouds-near、foreground-grass。素材清單見 `public/town/README.md`。
 
@@ -249,7 +260,9 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 
 - 觸發：任一卡牌進入 `active`（監聽凍結區 `activeCard` store），`CaptureButton` 於畫面底部中央淡入（手機 64px，桌機 56px）。
 - 點擊精靈球：
-  1. `pokeball.js` 在場景中生成精靈球，從按鈕位置沿拋物線飛到卡牌中心（由 `$activeCard.getBoundingClientRect()` 轉為場景座標），約 600ms。
+  1. `pokeball.js` 生成精靈球，從按鈕位置沿拋物線飛到卡牌中心，約 600ms。
+     實作採 DOM 元素 + Web Animations API，而非原設計的 three.js 場景：場景 canvas 在頁面底下，
+     畫在場景裡會被放大的卡牌遮住。卡牌中心取 `.card__rotator` 的 `getBoundingClientRect()`（含 transform）。
   2. 到達後精靈球放大再縮小模擬吸入，卡牌 DOM 不動。
   3. 晃動三下，每下 350ms，最後閃星粒子約 800ms。
   4. `pokedex.add(card)`，TopBar 計數 +1 並彈跳一次。
@@ -307,13 +320,15 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 ### 9.6 路標
 
 - 18 個木牌，橫向排列，桌機可換行、手機橫向捲動（`scroll-snap`）。
-- 目前所在展示區高亮（IntersectionObserver 追蹤）。
+- 目前所在展示區高亮：以捲動位置判斷，取最後一個頂端已到達停靠線的展示區（IntersectionObserver 在落點時會與上一區尾端相交而選錯）。
+- 平滑捲動途中沿路展示區會延遲掛載而改變高度，`scrollend` 後再瞬間校正一次落點。
 - 點擊：`scrollIntoView({ behavior: 'smooth' })`，`scroll-margin-top` 預留 TopBar + 路標高度。
 - 搜尋中時路標隱藏。
 
 ### 9.7 傾斜感應授權（iOS）
 
-- 只在 `typeof DeviceOrientationEvent.requestPermission === 'function'` 時顯示按鈕「開啟傾斜感應」。
+- 只在 `typeof DeviceOrientationEvent.requestPermission === 'function'` 且 `navigator.maxTouchPoints > 0` 時顯示按鈕「開啟傾斜感應」
+  （部分桌機 Chrome 也暴露 requestPermission，以觸控點數過濾）。
 - 授權成功後隱藏按鈕並呼叫凍結區的 `resetBaseOrientation()`；拒絕則顯示「已停用」。
 - 授權狀態不持久化（iOS 每次載入都需重新授權）。
 
@@ -343,10 +358,10 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 |---|---|---|
 | 0 | 鷹架、凍結區複製、Svelte 5 相容驗證（已完成） | `diff -r` 與原作一致、`vite build` 通過、headless Chrome 驗證通過 |
 | 1 | Commit 1：里程碑 0 + gtag shim + 文件（已完成，2026-09-06） | `git init` 後首次 commit |
-| 2 | 介面骨架：app.css、TopBar、Hero、Signpost、Section、CardGrid、ProfessorDialog、Search（含中文搜尋與 build:names）、Footer、sections.js | 18 區塊可瀏覽、中英文搜尋可用、路標可跳轉、手機排版正確 |
-| 3 | 場景：TownScene 佔位版、視差、日夜循環 | 四時段可切換、reduced-motion 靜態 |
-| 4 | 互動：捕捉、圖鑑、屬性天氣、傾斜授權 | 全流程可在桌機與手機操作 |
-| 5 | Commit 2：完整展示館 | headless Chrome 走一遍：載入、捲動、放大、捕捉、圖鑑、搜尋，無 console error |
+| 2 | 介面骨架：app.css、TopBar、Hero、Signpost、Section、CardGrid、ProfessorDialog、Search（含中文搜尋與 build:names）、Footer、sections.js（已完成，2026-09-06；headless Chrome 23 項驗收通過） | 18 區塊可瀏覽、中英文搜尋可用、路標可跳轉、手機排版正確 |
+| 3 | 場景：TownScene 佔位版、視差、日夜循環（已完成，2026-09-06；headless Chrome 16 項驗收通過） | 四時段可切換、reduced-motion 靜態 |
+| 4 | 互動：捕捉、圖鑑、屬性天氣、傾斜授權（已完成，2026-09-06；headless Chrome 28 項驗收通過） | 全流程可在桌機與手機操作 |
+| 5 | Commit 2：完整展示館（已完成，2026-09-06；對 `vite preview` 生產版本走完桌機與手機各 13 項，0 console error） | headless Chrome 走一遍：載入、捲動、放大、捕捉、圖鑑、搜尋，無 console error |
 
 不 push，遠端由使用者自行設定。
 

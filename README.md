@@ -4,7 +4,8 @@
 
 ## 狀態
 
-實作進行中。里程碑 1 已完成（鷹架、凍結區複製、Svelte 5 相容驗證、gtag shim、文件，已首次 commit），下一步為里程碑 2 介面骨架。
+PLAN §12 五個里程碑已全部完成並 commit（2026-09-06）：介面骨架、中英文搜尋、真新鎮佔位場景、視差、日夜循環、捕捉與我的圖鑑、屬性天氣、傾斜授權。
+生產版本以 headless Chrome 走完載入、捲動、放大、捕捉、圖鑑、搜尋、日夜切換，桌機與手機皆無 console error。待補：真新鎮素材與博士頭像（見 `docs/PLAN.md` §13）、部署目標。
 完整規格見 [`docs/PLAN.md`](./docs/PLAN.md)，詞彙見 [`CONTEXT.md`](./CONTEXT.md)，決策見 [`docs/adr/`](./docs/adr/)。
 
 ## 開發

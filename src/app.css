@@ -1,2 +1,184 @@
-/* placeholder, replaced in step 2 */
-body { margin: 0; background: #1b2a3a; color: white; font-family: sans-serif; }
+/* 寶可夢卡牌展示館 全站樣式：真新鎮配色、字型、版型、reset。
+   卡牌本身的樣式來自凍結區 public/css，此處不覆寫 .card。 */
+
+:root {
+  /* 真新鎮配色 */
+  --sky-top: #79c2ff;
+  --sky-bottom: #d9f0ff;
+  --field: #6fbf5a;
+  --field-dark: #4d9a3f;
+  --roof: #d9534f;
+  --wall: #fff8ec;
+  --wood: #a86b3c;
+  --wood-dark: #7a4a27;
+  --wood-light: #c98a55;
+  --ink: #2b2f36;
+  --ink-soft: #5a6270;
+  --paper: rgba(255, 255, 255, 0.92);
+  --accent: #ffcc00;
+  --accent-dark: #e0a800;
+
+  /* 介面色票（日夜循環依 <html data-daycycle> 覆寫；對話框、路標木色不變） */
+  --ui-bg: rgba(255, 255, 255, 0.72);
+  --ui-chip: rgba(255, 255, 255, 0.85);
+  --ui-fg: var(--ink);
+  --ui-fg-soft: var(--ink-soft);
+  --ui-border: rgba(43, 47, 54, 0.12);
+  --ui-shadow: 0 6px 24px rgba(30, 60, 90, 0.14);
+  --title-shadow: var(--wood-dark);
+
+  /* 字型 */
+  --font-display: 'Huninn', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --font-body: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+
+  /* 版型量測，供 scroll-margin 與 sticky 疊放使用 */
+  --topbar-h: 60px;
+  --signpost-h: 64px;
+  --page-max: 1200px;
+}
+
+/* 日夜時段色票（與 src/config/dayCycle.js 的天空色一致，供 WebGL 不可用時的備援天空） */
+:root[data-daycycle='dawn'] {
+  --sky-top: #f7b98f;
+  --sky-bottom: #bfe0f7;
+  --ui-bg: rgba(255, 245, 235, 0.74);
+  --ui-chip: rgba(255, 250, 244, 0.88);
+}
+:root[data-daycycle='dusk'] {
+  --sky-top: #f2704b;
+  --sky-bottom: #6b3f8f;
+  --field: #4f8f45;
+  --field-dark: #35672f;
+  --ui-bg: rgba(58, 36, 72, 0.66);
+  --ui-chip: rgba(80, 52, 96, 0.8);
+  --ui-fg: #fbf3ff;
+  --ui-fg-soft: #d9c8e6;
+  --ui-border: rgba(255, 255, 255, 0.16);
+  --title-shadow: #2a1a3a;
+}
+:root[data-daycycle='night'] {
+  --sky-top: #0d1b3d;
+  --sky-bottom: #050912;
+  --field: #1f3d2a;
+  --field-dark: #142a1c;
+  --ui-bg: rgba(14, 22, 42, 0.72);
+  --ui-chip: rgba(30, 42, 70, 0.85);
+  --ui-fg: #eef2ff;
+  --ui-fg-soft: #b8c3dc;
+  --ui-border: rgba(255, 255, 255, 0.14);
+  --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --title-shadow: #0a1020;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ui-fg);
+  transition: color 0.6s ease;
+  /* 場景 canvas 未掛載或 WebGL 不可用時的天空（§8.4） */
+  background: linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-bottom) 55%, var(--field) 55.2%, var(--field-dark) 100%) fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.25;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* 所有可點擊控制項至少 44×44（§10） */
+button,
+.tap-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* 僅供螢幕閱讀器 */
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 頁面容器 */
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+.page {
+  position: relative;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 16px 40px;
+}
+
+@media (min-width: 900px) {
+  .page {
+    padding: 0 32px 60px;
+  }
+}
+
+/* 對話框、路標等的紙質面板 */
+.panel {
+  background: var(--paper);
+  border-radius: 16px;
+  box-shadow: var(--ui-shadow);
+}
+
+/* 木牌質感（路標） */
+.wood {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.05) 0 2px, transparent 2px 9px),
+    linear-gradient(to bottom, var(--wood-light), var(--wood) 55%, var(--wood-dark));
+  color: #fff7e6;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  border: 2px solid var(--wood-dark);
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
