@@ -9,13 +9,51 @@
   let button = $state()
   let busy = $state(false)
   let justCaptured = $state(false)
+  let escaped = $state(false)
+  let resultTimer
 
   const card = $derived(cards.fromElement($activeCard))
   const captured = $derived(!!card && pokedex.has(card.id))
   const visible = $derived(!!$activeCard && !!card)
+  const rate = $derived(card ? captureRate(card) : 0)
+
+  /** 捕捉率依稀有度分級（PLAN §9.1）；稀有度未知時視同閃卡 */
+  function captureRate(c) {
+    const r = (c.rarity ?? '').toLowerCase()
+    if (!r) return 0.7
+    if (/rainbow|secret|shiny/.test(r)) return 0.3
+    if (/ultra|vmax/.test(r)) return 0.45
+    if (/amazing|radiant|vstar|holo v\b/.test(r)) return 0.55
+    if (/common/.test(r)) return 0.9
+    return 0.7
+  }
+
+  function showResult(kind) {
+    clearTimeout(resultTimer)
+    justCaptured = kind === 'captured'
+    escaped = kind === 'escaped'
+    resultTimer = setTimeout(() => {
+      justCaptured = false
+      escaped = false
+    }, 1500)
+  }
 
   $effect(() => {
     preloadPokeballAsset()
+  })
+
+  // 凍結區 Card.svelte 以 on:blur 收合卡牌：按下精靈球會先讓卡牌失焦、收合、按鈕停用，click 進不來。
+  // 指標操作：pointerdown/mousedown 取消預設行為，焦點留在卡牌上。
+  // 鍵盤操作：Tab 到按鈕時 blur 已無法避免，改在 capture 階段攔下卡牌的 blur，不讓凍結區的收合處理器執行。
+  function keepFocus(e) {
+    e.preventDefault()
+  }
+  $effect(() => {
+    const guard = (e) => {
+      if (e.relatedTarget === button && $activeCard?.contains(e.target)) e.stopPropagation()
+    }
+    document.addEventListener('blur', guard, true)
+    return () => document.removeEventListener('blur', guard, true)
   })
 
   function cardCenter(el) {
@@ -38,11 +76,17 @@
     try {
       const b = button.getBoundingClientRect()
       const size = viewport.isMobile ? 64 : 56
+      // 先擲骰決定成敗，動畫只負責演出；失敗時晃 1 到 3 下後彈開
+      const success = Math.random() < rate
+      const shakes = 1 + Math.floor(Math.random() * 3)
       // 收合時按鈕淡出，動畫照常播完
-      await throwPokeball({ x: b.left + b.width / 2, y: b.top + b.height / 2 }, cardCenter(el), size)
-      pokedex.add(snapshot, sectionId)
-      justCaptured = true
-      setTimeout(() => (justCaptured = false), 1200)
+      await throwPokeball({ x: b.left + b.width / 2, y: b.top + b.height / 2 }, cardCenter(el), size, { success, shakes })
+      if (success) {
+        pokedex.add(snapshot, sectionId)
+        showResult('captured')
+      } else {
+        showResult('escaped')
+      }
     } finally {
       busy = false
     }
@@ -56,8 +100,11 @@
     class="ball"
     class:captured
     class:busy
+    class:escaped
     disabled={!visible || busy}
     tabindex={visible ? 0 : -1}
+    onpointerdown={keepFocus}
+    onmousedown={keepFocus}
     onclick={onClick}
     aria-label={captured ? `放生 ${card?.name ?? '這張卡牌'}` : `捕捉 ${card?.name ?? '這張卡牌'}`}
   >
@@ -72,12 +119,14 @@
   <span class="label" aria-live="polite">
     {#if justCaptured}
       捕捉成功！
+    {:else if escaped}
+      跑掉了！再試一次
     {:else if captured}
       已捕捉，再點一次放生
     {:else if busy}
       捕捉中…
     {:else}
-      捕捉這張卡牌
+      捕捉這張卡牌 · 成功率 {Math.round(rate * 100)}%
     {/if}
   </span>
 </div>
@@ -129,6 +178,20 @@
   }
   .ball.busy {
     opacity: 0.4;
+  }
+  .ball.escaped {
+    animation: escaped-shake 0.4s ease;
+  }
+  @keyframes escaped-shake {
+    20% { transform: translateX(-6px) rotate(-8deg); }
+    40% { transform: translateX(6px) rotate(8deg); }
+    60% { transform: translateX(-4px) rotate(-5deg); }
+    80% { transform: translateX(4px) rotate(5deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ball.escaped {
+      animation: none;
+    }
   }
 
   .label {

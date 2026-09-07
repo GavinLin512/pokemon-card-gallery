@@ -37,7 +37,7 @@
   $effect(() => {
     if (!town) return
     const card = cards.fromElement($activeCard)
-    town.setWeather($activeCard ? weatherKeyFor(card) : null)
+    if ($activeCard) town.setWeather(weatherKeyFor(card))
   })
   $effect(() => {
     town?.setReducedMotion(viewport.reducedMotion)

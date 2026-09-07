@@ -31,7 +31,7 @@
   --font-display: 'Huninn', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
   --font-body: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
 
-  /* 版型量測，供 scroll-margin 與 sticky 疊放使用 */
+  /* 版型量測：scroll-margin、停靠路標與頁尾預留空間使用 */
   --topbar-h: 60px;
   --signpost-h: 64px;
   --page-max: 1200px;
@@ -150,12 +150,13 @@ button,
   position: relative;
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: 0 16px 40px;
+  /* 底部預留停靠路標的高度，避免最後一區被遮住 */
+  padding: 0 16px calc(56px + var(--signpost-h) + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 900px) {
   .page {
-    padding: 0 32px 60px;
+    padding: 0 32px calc(76px + var(--signpost-h) + env(safe-area-inset-bottom, 0px));
   }
 }
 

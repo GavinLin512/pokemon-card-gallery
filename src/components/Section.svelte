@@ -16,12 +16,14 @@
 
   function estimateHeight(count, width) {
     const desktop = width >= 900
-    const cols = desktop ? 3 : 1
     const gap = 50
-    const cardW = desktop ? (width - 100 - 2 * width * 0.02) / 3 : Math.min(width, 900) - 100
     // 實測卡牌高約為寬的 1.3 倍（含卡牌 CSS 的內距）
+    if (!desktop) {
+      // 手機為輪播，一次一張，寬 78% 最寬 360px，上下各留輪播內距與分頁列
+      return Math.round(Math.min(width * 0.78, 360) * 1.3 + 34 + 56)
+    }
+    const cardW = (width - 100 - 2 * width * 0.02) / 3
     const rowH = cardW * 1.3 + gap
-    // 手機為三張扇形疊一列
     const rows = Math.ceil(count / 3) || 1
     return Math.round(rows * rowH + 100 - gap)
   }
@@ -91,7 +93,7 @@
 
 <style>
   .section {
-    scroll-margin-top: calc(var(--topbar-h) + var(--signpost-h) + 12px);
+    scroll-margin-top: calc(var(--topbar-h) + 12px);
     padding-top: 24px;
   }
 

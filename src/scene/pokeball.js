@@ -1,7 +1,8 @@
 // 精靈球捕捉動畫（PLAN §9.1）。
 // 與 PLAN 原設計不同，這裡用 DOM + Web Animations API 而非 three.js：
 // 場景 canvas 在頁面底下，若在場景裡畫精靈球會被放大的卡牌遮住；DOM 元素可以疊在卡牌之上。
-// 時間軸：拋物線飛行 600ms → 吸入放大縮小 400ms → 晃動三下各 350ms → 閃星 800ms。
+// 時間軸：拋物線飛行 600ms → 吸入放大縮小 400ms → 晃動每下 350ms → 成功閃星 800ms；
+// 失敗則晃 1 到 3 下後精靈球彈開（閃光擴散 + 煙霧散開 500ms），卡牌跑掉。
 
 const FLIGHT_MS = 600
 const ABSORB_MS = 400
@@ -9,6 +10,8 @@ const SHAKE_MS = 350
 const SHAKES = 3
 const STARS_MS = 800
 const STAR_COUNT = 12
+const BREAK_MS = 500
+const PUFF_COUNT = 6
 
 const POKEBALL_SVG = `
 <svg viewBox="0 0 64 64" aria-hidden="true">
@@ -41,11 +44,13 @@ function finished(animation) {
 
 /**
  * 從 from 飛到 to 並播完整套捕捉動畫。回傳 Promise，動畫結束後元素自動移除。
+ * 成敗由呼叫端決定（見 CaptureButton 的捕捉率），這裡只負責演出。
  * @param {{x:number,y:number}} from 視窗座標（按鈕中心）
  * @param {{x:number,y:number}} to   視窗座標（卡牌中心）
  * @param {number} size 精靈球直徑（px）
+ * @param {{success?: boolean, shakes?: number}} [outcome] success 預設 true；shakes 為晃動次數，成功固定 3，失敗 1 到 3
  */
-export async function throwPokeball(from, to, size = 56) {
+export async function throwPokeball(from, to, size = 56, { success = true, shakes = SHAKES } = {}) {
   const root = document.createElement('div')
   root.className = 'pokeball-fx'
   root.setAttribute('aria-hidden', 'true')
@@ -90,7 +95,8 @@ export async function throwPokeball(from, to, size = 56) {
     )
   )
 
-  // 3. 晃動三下
+  // 3. 晃動：成功三下；失敗依 shakes 晃 1 到 3 下後彈開
+  const times = success ? SHAKES : Math.min(Math.max(1, Math.round(shakes)), SHAKES)
   await finished(
     root.animate(
       [
@@ -99,9 +105,15 @@ export async function throwPokeball(from, to, size = 56) {
         { transform: `${at} translateX(8px) rotate(22deg)`, offset: 0.75 },
         { transform: `${at} rotate(0deg)` }
       ],
-      { duration: SHAKE_MS, iterations: SHAKES, easing: 'ease-in-out', fill: 'forwards' }
+      { duration: SHAKE_MS, iterations: times, easing: 'ease-in-out', fill: 'forwards' }
     )
   )
+
+  if (!success) {
+    await breakFree(root, ball, size)
+    root.remove()
+    return
+  }
 
   // 4. 閃星
   const burst = []
@@ -136,4 +148,50 @@ export async function throwPokeball(from, to, size = 56) {
   )
   await Promise.all(burst)
   root.remove()
+}
+
+/** 失敗演出：白色閃光環擴散、精靈球放大淡出、灰色煙霧向外散開 */
+async function breakFree(root, ball, size) {
+  const parts = []
+  const flash = document.createElement('span')
+  flash.style.cssText = `position:absolute;left:50%;top:50%;width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,.4) 45%, rgba(255,255,255,0) 70%);`
+  root.appendChild(flash)
+  parts.push(
+    finished(
+      flash.animate([{ transform: 'scale(0.4)', opacity: 1 }, { transform: 'scale(2.6)', opacity: 0 }], {
+        duration: BREAK_MS,
+        easing: 'ease-out',
+        fill: 'forwards'
+      })
+    )
+  )
+  for (let i = 0; i < PUFF_COUNT; i++) {
+    const puff = document.createElement('span')
+    const angle = (i / PUFF_COUNT) * Math.PI * 2 + Math.random() * 0.5
+    const dist = size * (0.9 + Math.random() * 0.6)
+    const d = size * (0.35 + Math.random() * 0.25)
+    puff.style.cssText = `position:absolute;left:50%;top:50%;width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px;border-radius:50%;background:rgba(235,235,235,.9);box-shadow:0 0 8px rgba(255,255,255,.6);`
+    root.appendChild(puff)
+    parts.push(
+      finished(
+        puff.animate(
+          [
+            { transform: 'translate(0,0) scale(0.5)', opacity: 0.9 },
+            { transform: `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px) scale(1.4)`, opacity: 0 }
+          ],
+          { duration: BREAK_MS, easing: 'ease-out', fill: 'forwards' }
+        )
+      )
+    )
+  }
+  parts.push(
+    finished(
+      ball.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(1.5) rotate(20deg)' }], {
+        duration: BREAK_MS * 0.6,
+        easing: 'ease-out',
+        fill: 'forwards'
+      })
+    )
+  )
+  await Promise.all(parts)
 }

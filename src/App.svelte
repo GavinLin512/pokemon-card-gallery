@@ -11,7 +11,6 @@
   import Signpost from './components/Signpost.svelte'
   import Section from './components/Section.svelte'
   import SearchResults from './components/SearchResults.svelte'
-  import Footer from './components/Footer.svelte'
 
   // 場景與 three.js 延後載入，不阻擋介面首屏
   const townScene = import('./scene/TownScene.svelte')
@@ -65,7 +64,6 @@
   {/if}
 </main>
 
-<Footer />
 <CaptureButton />
 <PokedexDrawer />
 
