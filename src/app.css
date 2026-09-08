@@ -204,6 +204,7 @@ button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .journey-distance { width: 1px; pointer-events: none; }
 .journey-stage { position: fixed; inset: 0; z-index: 20; pointer-events: none; outline: none; }
+.journey-stage.concealed { display: none; }
 .journey-stage button, .journey-stage a, .professor-slot { pointer-events: auto; }
 .pokeball-symbol { display: inline-block; position: relative; width: 32px; height: 32px; border: 2px solid var(--ink); border-radius: 50%; background: linear-gradient(var(--red) 0 45%, var(--ink) 45% 55%, var(--paper) 55%); flex-shrink: 0; }
 .pokeball-symbol::after { content: ''; position: absolute; inset: 34%; border: 2px solid var(--ink); border-radius: 50%; background: var(--paper); }

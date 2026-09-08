@@ -293,7 +293,7 @@
 {/await}
 <div class="journey-distance" style:height={`${(timeline.length + 1) * height}px`} aria-hidden="true"></div>
 <JourneyHud {openPanel} {navigate} />
-<main class="journey-stage" tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard} data-stop={stop?.id ?? 'travel'}>
+<main class="journey-stage" class:concealed={journey.panel === 'search' || !!selectedSearchCard} tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard} data-stop={stop?.id ?? 'travel'}>
   {#if !journey.sceneReady}
     <div class="opening-title loading" role="status"><span class="pokeball-symbol"></span><p class="eyebrow">一段閃閃發光的冒險</p><h1>寶可夢<br />卡牌展示館</h1><p>正在前往真新鎮…</p><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
   {:else if journey.opening || (!stop && journey.current.position < .6)}
@@ -315,8 +315,8 @@
 </main>
 
 {#if journey.panel}
-  <div class="panel-backdrop" aria-hidden="true"></div>
-  <div tabindex="-1" class="game-panel" class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
+  <div class="panel-backdrop" class:concealed={!!selectedSearchCard} aria-hidden="true"></div>
+  <div tabindex="-1" class="game-panel" class:concealed={!!selectedSearchCard} class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
     <header class="panel-header"><div><p class="eyebrow">冒險隨身工具</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
     <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
     <div class="panel-scroll" bind:this={searchView}>

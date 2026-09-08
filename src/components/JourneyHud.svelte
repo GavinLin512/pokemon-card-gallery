@@ -22,7 +22,23 @@
   <nav class="hud-tools" aria-label="旅程工具">
     <button onclick={e => openPanel('search', e.currentTarget)} aria-label="搜尋卡牌" aria-expanded={journey.panel === 'search'}><span aria-hidden="true">⌕</span><b>搜尋</b></button>
     <button onclick={e => openPanel('pokedex', e.currentTarget)} aria-label={`我的圖鑑，已捕捉 ${pokedex.count} 張`} aria-expanded={journey.panel === 'pokedex'}><span aria-hidden="true">▣</span><b>圖鑑</b><em>{pokedex.count}</em></button>
-    <button onclick={() => dayCycle.cycle()} aria-label={`切換時段，目前${dayCycle.label}${dayCycle.isAuto ? '（自動）' : ''}`}><span aria-hidden="true">{dayCycle.key === 'night' ? '☾' : '☀'}</span><b>{dayCycle.isAuto ? '自動' : dayCycle.label}</b></button>
+    <button onclick={() => dayCycle.cycle()} aria-label={`切換時段，目前${dayCycle.label}${dayCycle.isAuto ? '（自動）' : ''}`}>
+      <svg class="day-cycle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        {#if dayCycle.isAuto}
+          <path d="M20 7a9 9 0 0 0-15-1L3 9m0-5v5h5M4 17a9 9 0 0 0 15 1l2-3m0 5v-5h-5M12 7v5l3 2" />
+        {:else if dayCycle.key === 'dawn'}
+          <path d="M3 18h18M6 18a6 6 0 0 1 12 0M12 9V2m-3 3 3-3 3 3M3 11l2 2m14 0 2-2M5 22h14" />
+        {:else if dayCycle.key === 'day'}
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+        {:else if dayCycle.key === 'dusk'}
+          <path d="M3 18h18M6 18a6 6 0 0 1 12 0M12 2v7m-3-3 3 3 3-3M3 11l2 2m14 0 2-2M5 22h14" />
+        {:else if dayCycle.key === 'night'}
+          <path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14ZM18 2v4m-2-2h4" />
+        {/if}
+      </svg>
+      <b>{dayCycle.isAuto ? '自動' : dayCycle.label}</b>
+    </button>
     {#if needsTilt && tilt !== 'granted'}<button aria-label="開啟傾斜感應" disabled={tilt === 'denied'} onclick={requestTilt}><span aria-hidden="true">↔</span><b>{tilt === 'denied' ? '已停用' : '傾斜'}</b></button>{/if}
   </nav>
 </header>
@@ -41,6 +57,7 @@
   .hud-tools { display: flex; gap: 8px; }
   .hud-tools button { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 13px; }
   .hud-tools span { font-size: 25px; line-height: 1; } b { font: 15px var(--font-display); }
+  .day-cycle-icon { width: 24px; height: 24px; flex-shrink: 0; }
   em { font-size: 12px; background: var(--red); color: white; border-radius: 5px; padding: 0 6px; font-style: normal; }
   .journey-bar { position: fixed; z-index: 35; left: 28px; right: 28px; bottom: max(20px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 20px; padding: 13px 16px; background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; color: var(--ink); box-shadow: 0 4px 0 #263d3b; overflow: hidden; }
   .stop-indicator { display: flex; gap: 15px; align-items: center; flex: 1; }

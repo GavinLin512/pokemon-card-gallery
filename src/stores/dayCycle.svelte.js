@@ -1,6 +1,6 @@
 // 目前時段（PLAN §9.3）：自動依本地時間每分鐘更新；手動覆寫寫入 localStorage['dayCycle.override']。
 
-import { periods, periodByKey, periodForHour, periodKeys } from '../config/dayCycle.js'
+import { periodByKey, periodForHour, periodKeys } from '../config/dayCycle.js'
 
 const STORAGE_KEY = 'dayCycle.override'
 
@@ -50,12 +50,10 @@ export const dayCycle = {
   get label() {
     return periodByKey(currentKey).label
   },
-  /** 依序切換四段，繞回自動時段時回到自動。 */
+  /** 自動 → 清晨 → 白天 → 黃昏 → 夜晚 → 自動，各模式皆可獨立選取。 */
   cycle() {
-    const order = periods.map((p) => p.key)
-    const idx = order.indexOf(currentKey)
-    const next = order[(idx + 1) % order.length]
-    override = next === autoKey ? null : next
+    const idx = periodKeys.indexOf(override)
+    override = periodKeys[idx + 1] ?? null
     try {
       if (override) localStorage.setItem(STORAGE_KEY, override)
       else localStorage.removeItem(STORAGE_KEY)
