@@ -16,6 +16,7 @@ export function createClouds({ lowPower = false } = {}) {
   }
   geometry.computeVertexNormals()
   const material = new MeshStandardMaterial({ color: '#f4f8ff', roughness: 1, metalness: 0, emissive: '#bdcddd', emissiveIntensity: 0.45 })
+  let flash = 0, lightLevel = 1
   const weatherUniforms = { cover: {value:1}, thickness: {value:1}, time: {value:0}, wind: {value:0} }
   material.onBeforeCompile = shader => {
     shader.uniforms.cloudCover = weatherUniforms.cover
@@ -26,7 +27,9 @@ export function createClouds({ lowPower = false } = {}) {
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
       #include <begin_vertex>
       transformed *= vec3(cloudCover, cloudThickness, cloudCover);
-      transformed.y *= 1. + sin(cloudTime*.2+instanceMatrix[3].x*.4)*cloudWind*.12;
+      float roll=sin(cloudTime*.55+instanceMatrix[3].x*.25+position.z*2.);
+      transformed.y *= 1. + roll*cloudWind*.2;
+      transformed.x += sin(cloudTime*.35+position.y*3.+instanceMatrix[3].z*.12)*cloudWind*.15;
     `)
   }
   // 每次載入隨機，同次瀏覽回捲與手機降級不會重新洗牌。
@@ -87,7 +90,7 @@ export function createClouds({ lowPower = false } = {}) {
   instances.forEach((matrix, index) => mesh.setMatrixAt(index, matrix))
   mesh.instanceMatrix.needsUpdate = true
   mesh.computeBoundingSphere()
-  mesh.boundingSphere.radius += 25
+  mesh.boundingSphere.radius += 80
   let elapsed = 0
   return {
     mesh,
@@ -101,9 +104,10 @@ export function createClouds({ lowPower = false } = {}) {
       })
       if (!visible.length) return null
       const origin = visible[Math.floor(Math.random() * visible.length)].clone()
-      origin.y -= .25
+      origin.y -= Math.min(4, weatherUniforms.thickness.value * .8)
       return origin
     },
+    setFlash(value) { flash = value; material.emissiveIntensity = .45 * lightLevel + flash * .35 },
     setLook(look, env) {
       material.emissive.copy(look.light)
       if (env) {
@@ -111,7 +115,8 @@ export function createClouds({ lowPower = false } = {}) {
         weatherUniforms.cover.value = env.cover
         weatherUniforms.thickness.value = env.thickness
         weatherUniforms.wind.value = env.wind
-        material.emissiveIntensity = .45 * env.light
+        lightLevel = env.light
+        material.emissiveIntensity = .45 * lightLevel + flash * .35
       }
     },
     update(dt, reduced) {

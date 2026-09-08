@@ -13,15 +13,15 @@ export const WEATHER_TRANSITION_MS = 2000
 // 雲量、厚度、環境亮度、近地霧、風、濕度、金屬光澤及背景熱浪。
 export const weatherEffects = {
   clear: { sky: '#b7daee', tint: 0, cloud: '#f4f8ff', cover: 1, thickness: 1, light: 1, fog: 0, wind: 0, wet: 0, metal: 0, heat: 0 },
-  leaves: { sky: '#b9e4d9', tint: .22, cloud: '#f5faf0', cover: .74, thickness: .8, light: 1, fog: 0, wind: .5 },
-  embers: { sky: '#f2b778', tint: .45, cloud: '#f4d8b9', cover: .45, thickness: .5, light: 1.08, fog: .06, heat: 1 },
-  rain: { sky: '#7c95aa', tint: .72, cloud: '#7e8e9e', cover: 1.9, thickness: 2, light: .7, fog: .3, wind: .14, wet: 1 },
-  sparks: { sky: '#59677e', tint: .8, cloud: '#505b70', cover: 2.2, thickness: 2.9, light: .58, fog: .12, wind: .3 },
-  orbs: { sky: '#b8a1cc', tint: .2, cloud: '#c8bfd7', cover: 1, thickness: 1, light: .88, fog: .45 },
-  aura: { sky: '#eac6a4', tint: .12, cloud: '#f4e5d4', cover: 1, thickness: 1, light: 1, fog: 0, wind: .12 },
-  mist: { sky: '#59616e', tint: .85, cloud: '#515864', cover: 2.1, thickness: 2.2, light: .52, fog: .55, wind: .08 },
-  shards: { sky: '#bac6d4', tint: .6, cloud: '#cbd1dc', cover: 1.25, thickness: 1, light: .95, fog: .08, metal: .65, wind: .12 },
-  petals: { sky: '#f2baca', tint: .5, cloud: '#ffe0d9', cover: .85, thickness: .85, light: 1, fog: .05, wind: .25 },
-  rays: { sky: '#b8cbdc', tint: .3, cloud: '#dfdbc7', cover: 1.5, thickness: 1.7, light: 1, fog: .1, wind: .2 },
-  feathers: { sky: '#a8d6ef', tint: .15, cloud: '#ffffff', cover: 1, thickness: 1.1, light: 1, fog: 0, wind: .2 }
+  leaves: { sky: '#a4e4b6', tint: .4, cloud: '#f5faf0', cover: .8, thickness: 1.25, light: 1.1, fog: 0, wind: 1.15 },
+  embers: { sky: '#f7a052', tint: .68, cloud: '#f4b97b', cover: .4, thickness: .55, light: 1.16, fog: .12, heat: 1.8 },
+  rain: { sky: '#657f99', tint: .85, cloud: '#637589', cover: 2.35, thickness: 3.2, light: .55, fog: .65, wind: 1.15, wet: 1 },
+  sparks: { sky: '#44566d', tint: .87, cloud: '#414d61', cover: 2.6, thickness: 4.2, light: .48, fog: .28, wind: 1 },
+  orbs: { sky: '#a486ce', tint: .48, cloud: '#b2a1ce', cover: 1.15, thickness: 1.4, light: .85, fog: .6 },
+  aura: { sky: '#e9b284', tint: .32, cloud: '#efd3ad', cover: 1, thickness: 1.15, light: 1.05, fog: .1, wind: .35 },
+  mist: { sky: '#384556', tint: .94, cloud: '#354353', cover: 2.65, thickness: 4, light: .4, fog: .8, wind: .6 },
+  shards: { sky: '#c0cddd', tint: .8, cloud: '#d4dce7', cover: 1.35, thickness: 1.5, light: 1.08, fog: .15, metal: 1, wind: .4 },
+  petals: { sky: '#f3aec8', tint: .72, cloud: '#ffdadb', cover: 1, thickness: 1.35, light: 1.05, fog: .12, wind: .65 },
+  rays: { sky: '#acb9d0', tint: .45, cloud: '#d7caa7', cover: 1.9, thickness: 3.2, light: 1.05, fog: .2, wind: .85 },
+  feathers: { sky: '#83c9f5', tint: .32, cloud: '#ffffff', cover: 1.25, thickness: 2.2, light: 1.1, fog: 0, wind: .8 }
 }

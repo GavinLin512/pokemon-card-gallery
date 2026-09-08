@@ -1,5 +1,6 @@
 <script>
   // 搜尋框（PLAN §6.2、§6.3、§6.4）：輸入名稱，或展開面板點選閃卡類型。狀態與查詢在 stores/search.svelte.js。
+  import { activeCard } from '../lib/stores/activeCard.js'
   import { search } from '../stores/search.svelte.js'
   import { FOIL_TYPES } from '../config/tcgdex.js'
 
@@ -13,13 +14,13 @@
       if (!root.contains(e.target)) open = false
     }
     const onKey = (e) => {
-      if (e.key === 'Escape') open = false
+      if (e.key === 'Escape' && !$activeCard && open) { open = false; e.stopImmediatePropagation() }
     }
     document.addEventListener('pointerdown', onPointer)
-    document.addEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('keydown', onKey, true)
     }
   })
 
@@ -88,11 +89,11 @@
 
   input {
     width: 100%;
-    height: 44px;
+    height: 48px;
     margin: 0;
     padding: 0 88px 0 40px;
     font: inherit;
-    font-size: 15px;
+    font-size: 16px;
     color: var(--ink);
     background: #fff;
     border: 2px solid var(--ui-border);
@@ -130,8 +131,8 @@
     align-items: center;
   }
   .tool {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     min-width: 0;
     min-height: 0;
     border: 0;
@@ -186,7 +187,7 @@
     gap: 8px;
   }
   .type-chip {
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 14px;
     font-family: var(--font-display);
     font-size: 15px;
@@ -212,10 +213,10 @@
   /* 手機：搜尋框寬度不夠排按鈕，面板改固定在 TopBar 下方撐滿螢幕 */
   @media (max-width: 899px) {
     .panel-pop {
-      position: fixed;
-      top: calc(var(--topbar-h) + 6px);
-      left: 8px;
-      right: 8px;
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
       max-height: calc(100vh - var(--topbar-h) - 24px);
       overflow-y: auto;
     }
@@ -226,7 +227,7 @@
       font-size: 16px;
     }
     .panel-pop {
-      min-width: 560px;
+      min-width: 0;
       left: auto;
     }
   }

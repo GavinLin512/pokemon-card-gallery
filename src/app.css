@@ -183,3 +183,81 @@ button,
     scroll-behavior: auto;
   }
 }
+
+/* 滿版冒險介面：閱讀面板在四時段保持米白，地景維持各自天色。 */
+:root, :root[data-daycycle] {
+  --paper: #fffaf0;
+  --ink: #283d39;
+  --ink-soft: #67756b;
+  --red: #c84d43;
+  --accent: #dd6553;
+  --accent-dark: #b13c35;
+  --wood-dark: #395a47;
+  --ui-border: #283d39;
+  --ui-shadow: 0 4px 0 #283d3933, 0 12px 32px #172e2922;
+}
+html { scroll-behavior: auto; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+html.journey-locked { overflow: hidden; }
+body { overflow-x: clip; }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.journey-distance { width: 1px; pointer-events: none; }
+.journey-stage { position: fixed; inset: 0; z-index: 20; pointer-events: none; outline: none; }
+.journey-stage button, .journey-stage a, .professor-slot { pointer-events: auto; }
+.pokeball-symbol { display: inline-block; position: relative; width: 32px; height: 32px; border: 2px solid var(--ink); border-radius: 50%; background: linear-gradient(var(--red) 0 45%, var(--ink) 45% 55%, var(--paper) 55%); flex-shrink: 0; }
+.pokeball-symbol::after { content: ''; position: absolute; inset: 34%; border: 2px solid var(--ink); border-radius: 50%; background: var(--paper); }
+.eyebrow { font-family: var(--font-display); font-size: 12px; letter-spacing: .15em; }
+.opening-title { position: absolute; left: 9%; top: 24%; color: #fffaf0; text-shadow: 0 2px 18px #17382f88; }
+.opening-title h1 { font-size: clamp(38px, 4.8vw, 76px); letter-spacing: .015em; line-height: 1.22; margin: 18px 0 24px; }
+.opening-title > p:not(.eyebrow) { font-size: 15px; }
+.opening-title > small { display: block; margin-top: 16px; font-size: 12px; }
+.opening-title > a { display: inline-flex; align-items: center; min-height: 44px; margin-top: 16px; font-size: 11px; text-underline-offset: 4px; }
+.primary { border: 2px solid var(--ink); border-radius: 12px; padding: 10px 24px; background: var(--paper); color: var(--ink); font-family: var(--font-display); box-shadow: 0 4px 0 var(--ink); margin-top: 28px; }
+.primary span { margin-left: 28px; color: var(--red); }
+.loading { inset: 0; display: grid; justify-items: center; align-content: center; text-align: center; color: var(--ink); background: linear-gradient(#9bd3ef, #e2f0e5); text-shadow: none; }
+.loading > .pokeball-symbol { width: 44px; height: 44px; margin-bottom: 20px; animation: loading-bob 1s ease-in-out infinite alternate; }
+.loading h1 { font-size: 42px; }
+@keyframes loading-bob { to { transform: translateY(-6px) rotate(15deg); } }
+.stop-heading { position: absolute; top: 108px; left: 12px; right: 12px; text-align: center; color: #fffaf0; text-shadow: 0 2px 8px #142c2988; }
+.stop-heading h1 { font-size: clamp(24px, 2.5vw, 36px); margin-top: 6px; }
+.stop-heading .eyebrow { font-size: 10px; }.stop-heading .eyebrow span { opacity: .65; }
+.professor-slot { position: absolute; bottom: 116px; left: 50%; width: min(640px, calc(100% - 32px)); translate: -50% 0; }
+.journey-stage .professor-slot .dialog { margin: 0; border: 2px solid var(--ink); border-radius: 12px; padding: 12px 18px; grid-template-columns: 58px 1fr; }
+.journey-stage .professor-slot .avatar { width: 58px; height: 58px; border-radius: 10px; border-color: #899681; }
+.journey-stage .professor-slot .text { font-size: 14px; line-height: 1.7; }.journey-stage .professor-slot .speaker { font-size: 12px; color: var(--red); }
+.flying-note { position: absolute; bottom: 160px; left: 50%; translate: -50% 0; text-align: center; color: white; text-shadow: 0 2px 8px #142c29; }.flying-note > span { font-size: 32px; }.flying-note p { font-family: var(--font-display); font-size: 22px; }.flying-note small { font-size: 12px; }
+.data-status { position: absolute; top: 110px; right: 28px; padding: 12px 18px; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; color: var(--ink); pointer-events: auto; }.data-status button { margin-left: 12px; }
+.scene-fallback { position: absolute; left: 28px; top: 95px; color: var(--ink); background: var(--paper); border-radius: 8px; padding: 3px 8px; font-size: 10px; }
+.panel-backdrop, .inspection-shade { position: fixed; inset: 0; z-index: 190; background: #122c2966; }
+.game-panel { position: fixed; z-index: 200; top: max(16px, env(safe-area-inset-top)); right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: min(560px, calc(100% - 32px)); display: flex; flex-direction: column; border: 2px solid var(--ink); border-radius: 18px; background: var(--paper); color: var(--ink); box-shadow: 0 6px 0 #283d39, 0 20px 80px #122c2955; }
+.map-panel { width: min(1080px, calc(100% - 56px)); left: 50%; right: auto; translate: -50% 0; top: max(5vh, env(safe-area-inset-top)); bottom: max(5vh, env(safe-area-inset-bottom)); }
+.panel-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 26px 16px; gap: 16px; }.panel-header h2 { font-size: 30px; margin-top: 5px; }.panel-header .eyebrow { font-size: 10px; color: var(--red); }
+.panel-close { border: 2px solid var(--ink); border-radius: 10px; background: transparent; font-size: 28px; width: 44px; height: 44px; }
+.panel-tabs { display: flex; gap: 8px; padding: 0 26px 16px; border-bottom: 1px solid #283d3922; }.panel-tabs button { background: none; border: 1px solid #283d3944; padding: 0 14px; border-radius: 8px; font: 14px var(--font-display); }.panel-tabs .chosen { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.panel-scroll { overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; padding: 24px 26px; }
+.inspection-shade { z-index: 290; background: #122c2999; }
+.search-inspection { position: fixed; width: min(300px, 54vw, calc((100svh - 160px) * .716)); left: calc(50% - min(150px, 27vw, (100svh - 160px) * .358)); top: 16%; z-index: 310; }
+.inspection-close { position: fixed; z-index: 420; right: 24px; top: max(24px, env(safe-area-inset-top)); background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 12px; padding: 0 14px; font-size: 24px; }.inspection-close span { font-size: 14px; vertical-align: middle; }
+.capture { z-index: 420 !important; }
+.journey-fade { position: fixed; z-index: 500; inset: 0; background: #eff3e7; pointer-events: none; opacity: 0; transition: opacity .16s; }.journey-fade.on { opacity: 1; }
+.concealed { visibility: hidden; }
+@media(max-width:899px) {
+  .opening-title { top: 25%; left: 24px; right: 24px; }.opening-title h1 { font-size: clamp(34px, 8.5vw, 60px); }.opening-title > p:not(.eyebrow) { max-width: 240px; font-size: 13px; }.opening-title.loading { inset: 0; }
+  .stop-heading { top: 85px; }.stop-heading h1 { font-size: 23px; }
+  .professor-slot { bottom: 103px; width: calc(100% - 24px); }.journey-stage .professor-slot .dialog { padding: 10px; grid-template-columns: 42px 1fr; gap: 9px; }.journey-stage .professor-slot .avatar { width: 42px; height: 42px; }.journey-stage .professor-slot .text { font-size: 12px; line-height: 1.65; }.journey-stage .professor-slot .speaker { font-size: 11px; }
+  .game-panel, .map-panel { top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; translate: none; border-radius: 14px; max-height: calc(100dvh - 16px); }.panel-header { padding: 18px 18px 14px; }.panel-header h2 { font-size: 26px; }.panel-tabs { padding: 0 18px 14px; gap: 5px; }.panel-tabs button { flex: 1; padding: 0 8px; font-size: 13px; }.panel-scroll { padding: 18px; }
+  .scene-fallback { top: 65px; left: 12px; }.data-status { top: 160px; left: 12px; right: 12px; }
+}
+@media(max-height:600px) {
+  .stop-heading { top: 88px; left: 67%; text-align: left; }.stop-heading h1 { font-size: 21px; }.professor-slot { bottom: 100px; left: 67%; width: 30%; translate: none; }.journey-stage .professor-slot .dialog { display: block; padding: 12px; }.journey-stage .professor-slot .avatar { display: none; }.journey-stage .professor-slot .text { font-size: 12px; }.opening-title { top: 22%; }.opening-title h1 { font-size: 34px; margin: 8px 0; }.opening-title > small, .opening-title > a { display: inline-block; margin-left: 14px; }.opening-title .primary { margin-top: 12px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* 到站輕快浮現；不壓暗地景，不等候長演出。 */
+@keyframes stop-rise { from { opacity: 0; translate: 0 9px; } to { opacity: 1; translate: 0 0; } }
+@keyframes stop-fade { from { opacity: 0; } to { opacity: 1; } }
+.stop-heading { animation: stop-rise .26s ease-out both; }
+.journey-stage .professor-slot .dialog { animation: stop-rise .28s ease-out both; }

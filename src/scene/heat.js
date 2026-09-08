@@ -7,8 +7,8 @@ export function createHeatPass() {
  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
  fragmentShader:`uniform sampler2D map;uniform float time,strength;varying vec2 vUv;
  void main(){vec2 uv=vUv;float ground=(1.-smoothstep(.4,.68,uv.y))*smoothstep(0.,.15,uv.y);
- uv.x+=sin(uv.y*95.+time*2.4+sin(uv.x*23.+time))*.0018*strength*ground;
- uv.y+=sin(uv.x*45.+time*1.7)*.0006*strength*ground;
+ uv.x+=sin(uv.y*95.+time*2.4+sin(uv.x*23.+time))*.0026*strength*ground;
+ uv.y+=sin(uv.x*45.+time*1.7)*.001*strength*ground;
  gl_FragColor=texture2D(map,clamp(uv,.001,.999));
  #include <colorspace_fragment>
  }`})

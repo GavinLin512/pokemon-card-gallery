@@ -227,10 +227,11 @@ export const search = {
   get isChinese() {
     return isChinese(query)
   },
-  /** 搜尋中：關鍵字已達最低長度或已點選閃卡類型，頁面只顯示搜尋結果。 */
+  /** 搜尋中：關鍵字已達最低長度或已點選閃卡類型，供搜尋面板判斷是否有有效查詢。 */
   get active() {
     return isUsable(query) || !!foil
   },
+  retry() { schedule(true) },
   clear() {
     query = ''
     foil = null

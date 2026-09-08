@@ -24,7 +24,7 @@ import { TRANSITION_MS } from '../config/dayCycle.js'
 import { drawPlaceholder, loadAsset } from './placeholders.js'
 import { createHeatPass } from './heat.js'
 import { createVillage } from './village.js'
-import { progressFromSections } from './journey.js'
+import { sampleFlight } from './journey.js'
 
 const SKY_SHADER = {
   vertexShader: `
@@ -32,16 +32,11 @@ const SKY_SHADER = {
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
   `,
   fragmentShader: `
-    uniform vec3 top; uniform vec3 bottom; uniform vec3 ground; uniform vec3 groundFar; uniform float horizon;
+    uniform vec3 top; uniform vec3 bottom; uniform float horizon;
     varying vec2 vUv;
     void main() {
-      if (vUv.y >= horizon) {
-        float t = (vUv.y - horizon) / (1.0 - horizon);
-        gl_FragColor = vec4(mix(bottom, top, smoothstep(0.0, 1.0, t)), 1.0);
-      } else {
-        float t = vUv.y / horizon;
-        gl_FragColor = vec4(mix(ground, groundFar, t), 1.0);
-      }
+      float t = smoothstep(horizon, 1.0, vUv.y);
+      gl_FragColor = vec4(mix(bottom, top, t), 1.0);
       #include <colorspace_fragment>
     }
   `
@@ -79,7 +74,7 @@ function cloneLook(l) {
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ lowPower: boolean, reducedMotion: boolean, isMobile: boolean, period: object }} opts
+ * @param {{ lowPower: boolean, reducedMotion: boolean, isMobile: boolean, period: object, onReady?: Function, onError?: Function }} opts
  */
 export function createTown(canvas, opts) {
   const state = {
@@ -113,8 +108,6 @@ export function createTown(canvas, opts) {
     uniforms: {
       top: { value: new Color('#79c2ff') },
       bottom: { value: new Color('#d9f0ff') },
-      ground: { value: new Color('#7ccf7a') },
-      groundFar: { value: new Color('#a9e2a0') },
       horizon: { value: HORIZON }
     },
     depthTest: false,
@@ -164,6 +157,7 @@ export function createTown(canvas, opts) {
       layers.map(async (l) => {
         let source = l.cfg.src ? await loadAsset(l.cfg.src, maxTexture) : null
         if (!source) source = drawPlaceholder(l.cfg, maxTexture)
+        if (destroyed) return
         const tex = new CanvasTexture(source)
         tex.colorSpace = SRGBColorSpace
         tex.generateMipmaps = false
@@ -176,14 +170,13 @@ export function createTown(canvas, opts) {
         l.material.needsUpdate = true
       })
     )
-    requestFrame()
+    if (!destroyed) requestFrame()
   }
 
   // 版面
   function layout() {
     const w = (state.width = canvas.clientWidth || window.innerWidth)
     const h = (state.height = canvas.clientHeight || window.innerHeight)
-    measurePending = true
     renderer.setSize(w, h, false)
     camera.left = -w / 2
     camera.right = w / 2
@@ -194,6 +187,8 @@ export function createTown(canvas, opts) {
     weather.resize(w, h)
     heat.resize(w, h, Math.min(renderer.getPixelRatio(), state.lowPower ? 1 : 1.5))
     village.resize(w, h)
+    // 與低空透視鏡頭的地平線對齊，遠景霧色與天空無接縫。
+    skyMaterial.uniforms.horizon.value = .5 + (2.2 / 24) / (2 * Math.tan(village.camera.fov * Math.PI / 360))
 
     for (const l of layers) {
       const displayW = w * (l.cfg.widthFrac ?? 1.15)
@@ -238,17 +233,14 @@ export function createTown(canvas, opts) {
   const pointer = { x: 0, y: 0 } // -1..1
   let journeyTarget = 0
   let journeyProgress = 0
-  let journeyReady = false
-  let measurePending = true
-  function measureJourney() {
-    measurePending = false
-    const sections = Array.from(document.querySelectorAll('main .section')).map(element => ({
-      top: element.getBoundingClientRect().top + window.scrollY
-    }))
-    const progress = progressFromSections(window.scrollY, state.height, document.documentElement.scrollHeight, sections)
-    if (progress === null) return
-    journeyTarget = progress
-    if (!journeyReady) { journeyProgress = progress; journeyReady = true }
+  let openingAmount = 0
+  let firstRendered = false
+  let destroyed = false
+  function setJourney(progress, opening = 0) {
+    journeyTarget = clamp(progress, 0, 1)
+    journeyProgress = journeyTarget
+    openingAmount = opening
+    requestFrame()
   }
   function updateParallaxTargets() {
     if (state.parallaxFrozen) return
@@ -272,10 +264,6 @@ export function createTown(canvas, opts) {
     pointer.y = clamp((e.clientY / state.height) * 2 - 1, -1, 1)
     updateParallaxTargets()
   }
-  function onScroll() {
-    measurePending = true
-    updateParallaxTargets()
-  }
   function setTilt(gamma, beta) {
     if (!state.isMobile) return
     pointer.x = clamp(gamma / 30, -1, 1)
@@ -296,8 +284,6 @@ export function createTown(canvas, opts) {
     village.setLook(l, env)
     skyMaterial.uniforms.top.value.copy(l.skyTop)
     skyMaterial.uniforms.bottom.value.copy(l.skyBottom)
-    skyMaterial.uniforms.ground.value.set('#7ccf7a').multiply(l.light)
-    skyMaterial.uniforms.groundFar.value.set('#a9e2a0').multiply(l.light)
     starMaterial.opacity = l.stars
     for (const layer of layers) {
       const role = layer.cfg.role
@@ -335,6 +321,17 @@ export function createTown(canvas, opts) {
   const shouldLoop = () => !state.reducedMotion && !state.paused
 
   function frame(now) {
+    if (destroyed) return
+    try { renderFrame(now) }
+    catch {
+      state.paused = true
+      if (raf) cancelAnimationFrame(raf)
+      raf = 0
+      opts.onError?.()
+    }
+  }
+
+  function renderFrame(now) {
     raf = 0
     const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.1) : 0
     lastTime = now
@@ -346,12 +343,7 @@ export function createTown(canvas, opts) {
       if (t >= 1) tweening = false
     }
 
-    if (measurePending) measureJourney()
     const smoothing = state.reducedMotion ? 1 : 1 - Math.exp(-dt * 7)
-    if (!state.parallaxFrozen && !state.reducedMotion) {
-      journeyProgress += (journeyTarget - journeyProgress) * smoothing
-      if (Math.abs(journeyTarget - journeyProgress) < 0.00001) journeyProgress = journeyTarget
-    }
     if (!state.parallaxFrozen && !state.reducedMotion) {
       villagePointer.x += (pointer.x - villagePointer.x) * smoothing
       villagePointer.y += (pointer.y - villagePointer.y) * smoothing
@@ -363,6 +355,14 @@ export function createTown(canvas, opts) {
     }
 
     village.update(state.reducedMotion ? { x: 0, y: 0 } : villagePointer, now, state.reducedMotion, journeyProgress, dt)
+    if (openingAmount > 0 && !state.reducedMotion) {
+      // 在南側道路上方下降，不改動既有地景或低空路徑。
+      const { target } = sampleFlight(journeyProgress)
+      village.camera.position.y += 6 * openingAmount
+      village.camera.position.z += 5 * openingAmount
+      target.y += 1.5 * openingAmount
+      village.camera.lookAt(target)
+    }
     applyLook(look)
     if (!state.reducedMotion) weatherTime += dt
     const heatStrength = state.reducedMotion ? 0 : weather.environment().heat * (state.lowPower ? .45 : 1)
@@ -373,6 +373,7 @@ export function createTown(canvas, opts) {
     renderer.render(village.scene, village.camera)
     if (heatStrength > .001) heat.render(renderer, weatherTime, heatStrength)
     frameRequested = false
+    if (!firstRendered) { firstRendered = true; opts.onReady?.() }
     if (shouldLoop()) raf = requestAnimationFrame(frame)
     else lastTime = 0
   }
@@ -382,7 +383,7 @@ export function createTown(canvas, opts) {
   }
   /** reduced-motion 或暫停時只補一幀 */
   function requestFrame() {
-    if (raf || frameRequested) return
+    if (destroyed || state.paused || raf || frameRequested) return
     frameRequested = true
     raf = requestAnimationFrame(frame)
   }
@@ -393,18 +394,12 @@ export function createTown(canvas, opts) {
       cancelAnimationFrame(raf)
       raf = 0
     }
+    frameRequested = false
     lastTime = 0
     if (!state.paused) { if (state.reducedMotion) requestFrame(); else startLoop() }
   }
 
-  const pageObserver = new ResizeObserver(() => {
-    measurePending = true
-    if (!state.paused) requestFrame()
-  })
-  pageObserver.observe(document.body)
-
   window.addEventListener('pointermove', onPointerMove, { passive: true })
-  window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', layout)
   document.addEventListener('visibilitychange', onVisibility)
 
@@ -414,6 +409,7 @@ export function createTown(canvas, opts) {
   startLoop()
 
   return {
+    setJourney,
     setPeriod,
     setTilt,
     /** null 明確恢復原景；卡牌收合不呼叫此方法。 */
@@ -434,6 +430,7 @@ export function createTown(canvas, opts) {
         cancelAnimationFrame(raf)
         raf = 0
       }
+      frameRequested = false
       lastTime = 0
       if (reduced) {
         tweening = false
@@ -468,10 +465,9 @@ export function createTown(canvas, opts) {
       return { x: l.current.x, y: l.current.y }
     },
     destroy() {
+      destroyed = true
       cancelAnimationFrame(raf)
-      pageObserver.disconnect()
       window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', layout)
       document.removeEventListener('visibilitychange', onVisibility)
       for (const l of layers) {

@@ -7,32 +7,48 @@
   import { viewport } from '../stores/viewport.svelte.js'
   import { cards } from '../stores/cards.svelte.js'
   import { weatherKeyFor } from '../config/weather.js'
+  import { journey } from '../stores/journey.svelte.js'
   import { createTown } from './town.js'
 
+  let { onready = () => {}, onerror = () => {}, openingAmount = 0 } = $props()
+  let failed = $state(false)
+  function fail() {
+    failed = true
+    town?.destroy()
+    town = null
+    onerror()
+  }
   let canvas = $state()
   let town = $state(null)
 
   onMount(() => {
-    if (!viewport.webgl || !canvas) return
-    const instance = createTown(canvas, {
+    if (!viewport.webgl || !canvas) { fail(); return }
+    let instance
+    try { instance = createTown(canvas, {
       lowPower: viewport.lowPower,
       reducedMotion: viewport.reducedMotion,
       isMobile: viewport.isMobile,
-      period: dayCycle.period
-    })
+      period: dayCycle.period,
+      onReady: onready,
+      onError: fail
+    }) } catch { fail(); return }
     town = instance
     if (import.meta.env.DEV) window.__town = instance
     return () => {
-      instance.destroy()
+      if (!failed) instance.destroy()
       town = null
     }
+  })
+
+  $effect(() => {
+    town?.setJourney(journey.current.progress, openingAmount)
   })
 
   $effect(() => {
     town?.setPeriod(dayCycle.period)
   })
   $effect(() => {
-    town?.setParallaxFrozen(!!$activeCard)
+    town?.setParallaxFrozen(journey.paused || journey.opening)
   })
   $effect(() => {
     if (!town) return
@@ -52,8 +68,8 @@
   })
 </script>
 
-{#if viewport.webgl}
-  <canvas class="town" bind:this={canvas} aria-hidden="true"></canvas>
+{#if viewport.webgl && !failed}
+  <canvas class="town" bind:this={canvas} onwebglcontextlost={event => { event.preventDefault(); fail() }} aria-hidden="true"></canvas>
 {/if}
 
 <style>

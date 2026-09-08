@@ -1,83 +1,335 @@
 <script>
-  // 頁面骨架與狀態組裝（PLAN §6）。
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import { sections, sliceCards, buildCardSectionMap } from './config/sections.js'
-  import { search } from './stores/search.svelte.js'
   import { cards as cardRegistry } from './stores/cards.svelte.js'
-  import CaptureButton from './components/CaptureButton.svelte'
-  import PokedexDrawer from './components/PokedexDrawer.svelte'
-  import TopBar from './components/TopBar.svelte'
-  import Hero from './components/Hero.svelte'
-  import Signpost from './components/Signpost.svelte'
-  import Section from './components/Section.svelte'
+  import { search } from './stores/search.svelte.js'
+  import { viewport } from './stores/viewport.svelte.js'
+  import { journey, timeline } from './stores/journey.svelte.js'
+  import { landingFor, restorePosition, advancePosition } from './journey/timeline.js'
+  import { activeCard } from './lib/stores/activeCard.js'
+  import JourneyHud from './components/JourneyHud.svelte'
+  import JourneyCarousel from './components/JourneyCarousel.svelte'
+  import JourneyMap from './components/JourneyMap.svelte'
+  import JourneyCard from './components/JourneyCard.svelte'
+  import ProfessorDialog from './components/ProfessorDialog.svelte'
+  import Search from './components/Search.svelte'
   import SearchResults from './components/SearchResults.svelte'
+  import PokedexDrawer from './components/PokedexDrawer.svelte'
+  import CaptureButton from './components/CaptureButton.svelte'
 
-  // 場景與 three.js 延後載入，不阻擋介面首屏
-  const townScene = import('./scene/TownScene.svelte')
-
+  const townScene = import('./scene/TownScene.svelte').catch(() => null)
   let cards = $state([])
   let loadError = $state(false)
+  let sceneFailed = $state(false)
+  let openingAmount = $state(1)
+  let height = $state(window.innerHeight)
+  let reveal = $state(false)
+  let revisit = $state(false)
+  let selectedSearchCard = $state(null)
+  let searchView = $state()
+  let panelRoot = $state()
+  let modalCard = $state()
+  let panelOpener = null
+  let cardOpener = null
+  let searchScroll = 0
+  let openingFrame = 0
+  let travelFrame = 0
+  let travelTarget = 0
+  let travelTime = 0
+  let navigationToken = 0
+  let hadActive = false
+  let disposed = false
+  const grouped = $derived(sections.map(section => ({ section, cards: sliceCards(cards, section) })))
+  const stop = $derived(journey.current.stop)
+  const currentCards = $derived(stop ? grouped[stop.index]?.cards ?? [] : [])
 
-  const showcase = $derived(cards[0])
-  const grouped = $derived(sections.map((section) => ({ section, cards: sliceCards(cards, section) })))
+  function hashStop() {
+    try { const id = decodeURIComponent(location.hash.slice(1)); return sections.some(s => s.id === id) ? id : null } catch { return null }
+  }
+  function savePosition() {
+    history.replaceState({ ...history.state, journeyPosition: journey.current.position }, '')
+  }
+  function setPosition(position, direct = false) {
+    cancelAnimationFrame(travelFrame)
+    travelFrame = 0
+    travelTime = 0
+    travelTarget = position
+    if (direct || position !== journey.current.position) journey.move(position, direct)
+    window.scrollTo({ top: journey.current.position * height, behavior: 'instant' })
+  }
+  // 鏡頭與舞台讀取同一份平滑距離；不在場景另加一層延遲。
+  function followScroll(now) {
+    travelFrame = 0
+    if (journey.paused) return
+    const dt = travelTime ? Math.min((now - travelTime) / 1000, .05) : 1 / 60
+    travelTime = now
+    const position = advancePosition(journey.current.position, travelTarget, dt)
+    journey.move(position)
+    if (position !== travelTarget) travelFrame = requestAnimationFrame(followScroll)
+    else { travelTime = 0; savePosition() }
+  }
 
-  onMount(async () => {
+  function finishOpening() {
+    cancelAnimationFrame(openingFrame)
+    openingAmount = 0
+    journey.opening = false
+  }
+  function ready(failed = false) {
+    if (journey.sceneReady) { if (failed) { sceneFailed = true; finishOpening() } return }
+    sceneFailed = failed
+    journey.sceneReady = true
+    if (!journey.opening || viewport.reducedMotion || failed) { finishOpening(); return }
+    const start = performance.now()
+    function frame(now) {
+      const t = Math.min(1, (now - start) / 1800)
+      openingAmount = (1 - t) ** 3
+      if (t < 1) openingFrame = requestAnimationFrame(frame)
+      else finishOpening()
+    }
+    openingFrame = requestAnimationFrame(frame)
+  }
+  async function loadCards() {
+    loadError = false
     try {
-      const res = await fetch('/data/cards.json')
-      if (!res.ok) throw new Error(res.statusText)
-      cards = await res.json()
-      cardRegistry.register(cards)
-      cardRegistry.setSectionMap(buildCardSectionMap(cards))
-      // 帶 #錨點 進站時，等展示區掛載後再捲動過去
-      const hash = decodeURIComponent(location.hash.slice(1))
-      if (hash && sections.some((s) => s.id === hash)) {
-        await tick()
-        document.getElementById(hash)?.scrollIntoView({ block: 'start' })
+      const response = await fetch('/data/cards.json', { signal: AbortSignal.timeout(20000) })
+      if (!response.ok) throw new Error('cards')
+      const data = await response.json()
+      if (!Array.isArray(data) || data.length < Math.max(...sections.flatMap(s => s.slices.map(([, end]) => end)))) throw new Error('cards')
+      if (disposed) return
+      cards = data
+      cardRegistry.register(data)
+      cardRegistry.setSectionMap(buildCardSectionMap(data))
+      const image = new Image(); image.src = data[1].images.large
+    } catch { if (!disposed) loadError = true }
+  }
+  async function navigate(id, cardId = null, record = true) {
+    const position = id ? landingFor(timeline, id) : 0
+    if (position === null) return
+    const token = ++navigationToken
+    finishOpening()
+    closePanel(false)
+    closeCard(false)
+    savePosition()
+    if (record) history.pushState({ journeyPosition: position }, '', id ? `#${id}` : location.pathname + location.search)
+    journey.jumping = !viewport.reducedMotion
+    if (journey.jumping) await new Promise(resolve => setTimeout(resolve, 160))
+    if (token !== navigationToken || disposed) return
+    if (cardId && id) {
+      const group = grouped.find(g => g.section.id === id)
+      const index = group?.cards.findIndex(c => c.id === cardId) ?? -1
+      if (index >= 0) journey.select(id, index)
+    }
+    setPosition(position, true)
+    savePosition()
+    if (journey.jumping) await new Promise(resolve => setTimeout(resolve, 100))
+    if (token === navigationToken) {
+      journey.jumping = false
+      await tick()
+      document.querySelector('.journey-stage')?.focus({ preventScroll: true })
+    }
+  }
+  async function openPanel(name, opener) {
+    finishOpening()
+    if (journey.panel === 'search') searchScroll = searchView?.scrollTop ?? 0
+    if (!journey.panel) panelOpener = opener ?? document.activeElement
+    journey.panel = name
+    await tick()
+    if (searchView) searchView.scrollTop = name === 'search' ? searchScroll : 0
+    panelRoot?.querySelector(name === 'search' ? 'input' : '.panel-close')?.focus({ preventScroll: true })
+  }
+  function closePanel(focus = true) {
+    if (journey.panel === 'search') searchScroll = searchView?.scrollTop ?? 0
+    journey.panel = null
+    if (focus) tick().then(() => panelOpener?.focus({ preventScroll: true }))
+  }
+  async function selectSearchCard(card, opener) {
+    cardOpener = opener
+    selectedSearchCard = card
+    await tick()
+    const button = modalCard?.querySelector('.card__rotator')
+    button?.focus({ preventScroll: true })
+    button?.click()
+  }
+  function closeCard(focus = true) {
+    activeCard.set(undefined)
+    if (selectedSearchCard) {
+      selectedSearchCard = null
+      if (focus) tick().then(() => cardOpener?.focus({ preventScroll: true }))
+    }
+  }
+  function selectEntry(entry) {
+    const id = sections.some(s => s.id === entry.sectionId) ? entry.sectionId : cardRegistry.sectionOf(entry.id)
+    if (id) navigate(id, entry.id)
+    else { search.query = entry.name; openPanel('search', null) }
+  }
+
+  $effect(() => {
+    const active = !!$activeCard
+    journey.expanded = active || !!selectedSearchCard
+    if (hadActive && !active && selectedSearchCard) closeCard()
+    hadActive = active
+  })
+  $effect(() => {
+    if (journey.paused) untrack(() => setPosition(journey.current.position))
+    document.documentElement.classList.toggle('journey-locked', journey.paused)
+    return () => document.documentElement.classList.remove('journey-locked')
+  })
+  $effect(() => {
+    const id = stop?.id
+    const available = currentCards.length > 0
+    const blocked = journey.opening || !journey.sceneReady || journey.jumping
+    reveal = false
+    if (!id || !available || blocked) return
+    revisit = untrack(() => !!journey.visited[id])
+    const show = () => { reveal = true }
+    if (viewport.reducedMotion) show()
+    else {
+      const timer = setTimeout(show, revisit ? 60 : 100)
+      return () => clearTimeout(timer)
+    }
+  })
+  $effect(() => {
+    if (!reveal || !stop || journey.panel) return
+    const id = stop.id
+    if (viewport.reducedMotion) { untrack(() => journey.visit(id)); return }
+    const timer = setTimeout(() => journey.visit(id), 280)
+    return () => clearTimeout(timer)
+  })
+  $effect(() => {
+    const next = grouped[(stop?.index ?? -1) + 1]?.cards[0]
+    if (next) { const image = new Image(); image.src = next.images.large }
+  })
+  $effect(() => { if (viewport.reducedMotion) finishOpening() })
+
+  onMount(() => {
+    document.getElementById('boot-screen')?.remove()
+    const previousRestoration = history.scrollRestoration
+    history.scrollRestoration = 'manual'
+    const hash = hashStop()
+    const restored = hash ? landingFor(timeline, hash) : restorePosition(timeline, history.state)
+    if (hash || restored > 0 || window.scrollY > 0) {
+      finishOpening()
+      setPosition(restored || window.scrollY / height, true)
+    }
+    savePosition()
+    loadCards()
+    townScene.then(module => { if (!module && !disposed) ready(true) })
+    const onScroll = () => {
+      if (journey.paused) { window.scrollTo({ top: journey.current.position * height, behavior: 'instant' }); return }
+      if (journey.opening) { finishOpening(); setPosition(0, true); return }
+      travelTarget = window.scrollY / height
+      if (viewport.reducedMotion) { journey.move(travelTarget); savePosition(); return }
+      if (!travelFrame) travelFrame = requestAnimationFrame(followScroll)
+    }
+    const onResize = async () => {
+      const position = journey.current.position
+      height = window.innerHeight
+      await tick()
+      setPosition(position, true)
+      if ($activeCard) window.dispatchEvent(new Event('scroll'))
+    }
+    const onHistory = () => {
+      navigationToken++
+      journey.jumping = false
+      finishOpening(); closeCard(false); closePanel(false)
+      const hash = hashStop()
+      setPosition(Number.isFinite(history.state?.journeyPosition) ? restorePosition(timeline, history.state) : hash ? landingFor(timeline, hash) : 0, true)
+    }
+    const skipOnInput = event => {
+      if (!journey.opening) return
+      if (event.type === 'keydown' && !['ArrowDown', 'PageDown', ' ', 'End'].includes(event.key)) return
+      event.preventDefault()
+      finishOpening(); setPosition(0, true)
+    }
+    const onKey = event => {
+      if (event.key === 'Escape') {
+        if ($activeCard || selectedSearchCard) { event.preventDefault(); event.stopImmediatePropagation(); closeCard(); return }
+        if (journey.panel) { event.preventDefault(); closePanel(); return }
       }
-    } catch {
-      loadError = true
+      if (event.key !== 'Tab') return
+      let elements = []
+      if ($activeCard) elements = [$activeCard.querySelector('button'), document.querySelector('.capture.visible button'), document.querySelector('.inspection-close')]
+      else if (journey.panel && panelRoot) elements = [...panelRoot.querySelectorAll('button:not(:disabled), input, a[href], [tabindex="0"]')]
+      elements = elements.filter(el => el && el.getClientRects().length && !el.closest('[inert]'))
+      if (!elements.length) return
+      const index = elements.indexOf(document.activeElement)
+      const next = index < 0 ? (event.shiftKey ? elements.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + elements.length) % elements.length
+      event.preventDefault()
+      elements[next].focus({ preventScroll: true })
+    }
+    const guardBlur = event => {
+      if ($activeCard?.contains(event.target) && event.relatedTarget?.closest('.capture, .inspection-close')) event.stopPropagation()
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onResize)
+    window.addEventListener('popstate', onHistory)
+    window.addEventListener('hashchange', onHistory)
+    window.addEventListener('wheel', skipOnInput, { passive: false })
+    window.addEventListener('touchmove', skipOnInput, { passive: false })
+    window.addEventListener('keydown', skipOnInput)
+    document.addEventListener('keydown', onKey, true)
+    document.addEventListener('blur', guardBlur, true)
+    if (import.meta.env.DEV) window.__journey = journey
+    return () => {
+      disposed = true
+      cancelAnimationFrame(openingFrame)
+      cancelAnimationFrame(travelFrame)
+      history.scrollRestoration = previousRestoration
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('popstate', onHistory)
+      window.removeEventListener('hashchange', onHistory)
+      window.removeEventListener('wheel', skipOnInput)
+      window.removeEventListener('touchmove', skipOnInput)
+      window.removeEventListener('keydown', skipOnInput)
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('blur', guardBlur, true)
     }
   })
 </script>
 
-<span id="top" class="sr-only" aria-hidden="true"></span>
-{#await townScene then { default: TownScene }}
-  <TownScene />
+{#await townScene then module}
+  {#if module}<module.default {openingAmount} onready={() => ready()} onerror={() => ready(true)} />{/if}
 {/await}
-<TopBar />
-
-<main class="page">
-  {#if search.active}
-    <SearchResults />
-  {:else}
-    <Hero card={showcase} />
-    {#if cards.length}
-      <Signpost {sections} />
-      {#each grouped as g (g.section.id)}
-        <Section section={g.section} cards={g.cards} />
-      {/each}
-    {:else if loadError}
-      <p class="status">卡牌資料載入失敗，請重新整理頁面。</p>
-    {:else}
-      <p class="status">正在整理卡牌…</p>
+<div class="journey-distance" style:height={`${(timeline.length + 1) * height}px`} aria-hidden="true"></div>
+<JourneyHud {openPanel} {navigate} />
+<main class="journey-stage" tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard} data-stop={stop?.id ?? 'travel'}>
+  {#if !journey.sceneReady}
+    <div class="opening-title loading" role="status"><span class="pokeball-symbol"></span><p class="eyebrow">一段閃閃發光的冒險</p><h1>寶可夢<br />卡牌展示館</h1><p>正在前往真新鎮…</p><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
+  {:else if journey.opening || (!stop && journey.current.position < .6)}
+    <div class="opening-title"><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><button class="primary" onclick={() => navigate('common')}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
+  {:else if stop && cards.length}
+    <div class="stop-heading" class:concealed={journey.expanded}><p class="eyebrow">{revisit ? '再次相遇' : '發現新的卡種'} <span> / {String(stop.index + 1).padStart(2, '0')}</span></p><h1>{stop.name}</h1></div>
+    {#if reveal}
+      {#key stop.id}
+        <JourneyCarousel cards={currentCards} section={stop} />
+        <div class="professor-slot" class:concealed={journey.expanded}><ProfessorDialog text={stop.blurb} instant={revisit} /></div>
+      {/key}
     {/if}
+  {:else if !stop}
+    <div class="flying-note"><span aria-hidden="true">↟</span><p>沿路探索中</p><small>下一站 · {journey.current.nearby?.name}</small></div>
   {/if}
+  {#if loadError}<div class="data-status" role="alert">卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
+  {:else if !cards.length && journey.sceneReady}<div class="data-status" role="status">正在整理卡牌…</div>{/if}
+  {#if sceneFailed}<p class="scene-fallback">靜態地景 · 卡牌旅程仍可繼續</p>{/if}
 </main>
 
+{#if journey.panel}
+  <div class="panel-backdrop" aria-hidden="true"></div>
+  <div tabindex="-1" class="game-panel" class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
+    <header class="panel-header"><div><p class="eyebrow">冒險隨身工具</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
+    <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
+    <div class="panel-scroll" bind:this={searchView}>
+      {#if journey.panel === 'map'}<JourneyMap {navigate} />
+      {:else if journey.panel === 'search'}<Search /><SearchResults selectCard={selectSearchCard} />
+      {:else}<PokedexDrawer {selectEntry} />{/if}
+    </div>
+  </div>
+{/if}
+{#if selectedSearchCard}
+  <div class="inspection-shade" aria-hidden="true"></div>
+  <div class="search-inspection" bind:this={modalCard} role="dialog" aria-modal="true" aria-label={`檢視 ${selectedSearchCard.name}`}><JourneyCard card={selectedSearchCard} /></div>
+{/if}
+{#if journey.expanded}<button class="inspection-close" aria-label="收合卡牌" onpointerdown={e => e.preventDefault()} onclick={() => closeCard()}>× <span>收合卡牌</span></button>{/if}
 <CaptureButton />
-<PokedexDrawer />
-
-<style>
-  .status {
-    margin: 40px auto;
-    max-width: 480px;
-    padding: 12px 20px;
-    text-align: center;
-    font-family: var(--font-display);
-    font-size: 18px;
-    color: var(--ink);
-    background: var(--paper);
-    border-radius: 12px;
-    box-shadow: var(--ui-shadow);
-  }
-</style>
+<div class="journey-fade" class:on={journey.jumping} aria-hidden="true"></div>

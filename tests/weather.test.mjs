@@ -52,7 +52,7 @@ test('world weather follows scene depth, rain stops above roofs, reduced mode hi
    assert.equal(v.weather.activeKey,key)
    v.weather.group.traverse(o=>{if(o.material){assert.notEqual(o.material.depthTest,false);assert.equal(o.material.depthWrite,false)}})
    v.update({x:0,y:0},2200,true,.5,0)
-   for(const o of v.weather.group.children)if(o.isPoints&&!['mist','psychic-fog'].includes(o.name))assert.equal(o.visible,false,o.name)
+   for(const o of v.weather.group.children)if(o.isPoints&&!['mist','psychic-fog','rain-mist'].includes(o.name))assert.equal(o.visible,false,o.name)
   }
   v.dispose()
  }
@@ -70,5 +70,45 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
  assert.ok(strikes>=2)
  v.update({x:0,y:0},12000,true,0,0)
  assert.equal(v.scene.getObjectByName('cloud-lightning').visible,false)
+ v.dispose()
+})
+
+
+test('enhanced weather stays in world space through travel and clears after interrupted transitions',()=>{
+ const v=createVillage({lowPower:true});v.resize(390,844)
+ const names=['leaf-glow','flames','rain-splash','puddles','psychic-rings','aura-dust','dark-shadows','fairy-rings','dragon-scales']
+ const originals=new Map(names.map(name=>[name,v.scene.getObjectByName(name).geometry.attributes.position.array.slice()]))
+ for(const key of Object.values(weatherByType)) {
+  v.weather.set(key)
+  v.update({x:0,y:0},100,false,.2,2)
+  for(const progress of [0,.45,1,0]) v.update({x:0,y:0},200,false,progress,.1)
+  for(const name of names) assert.deepEqual(v.scene.getObjectByName(name).geometry.attributes.position.array,originals.get(name))
+  v.weather.set('rain');v.update({x:0,y:0},300,false,.4,.5)
+  v.weather.set(null);v.update({x:0,y:0},400,false,.4,2)
+  for(const mesh of v.weather.group.children) if(mesh.material) assert.equal(mesh.visible,false,mesh.name)
+ }
+ // 靜態積水與霧可以保留，但時間不能繼續推進；回到一般模式可重新播放。
+ v.weather.set('rain');v.update({x:0,y:0},500,true,1,0)
+ const puddles=v.scene.getObjectByName('puddles'),fog=v.scene.getObjectByName('rain-mist')
+ assert.equal(puddles.visible,true);assert.equal(fog.visible,true)
+ v.update({x:0,y:0},5000,true,1,5)
+ assert.equal(puddles.material.uniforms.time.value,0);assert.equal(fog.material.uniforms.time.value,0)
+ v.update({x:0,y:0},5100,false,.5,.1)
+ assert.equal(v.scene.getObjectByName('rain-splash').visible,true)
+ v.dispose()
+})
+
+test('new ground effects avoid buildings and rain splashes share roof stopping heights',()=>{
+ const v=createVillage({lowPower:true})
+ const flames=v.scene.getObjectByName('flames').geometry.attributes.position
+ for(let i=0;i<flames.count;i++) {
+  const x=flames.getX(i),z=flames.getZ(i)
+  // 容許火舌邊緣延伸，中心不得生成在真新鎮民宅內。
+  assert.ok(!(Math.abs(x+7)<2&&Math.abs(z+8)<1.2))
+ }
+ const rain=v.scene.getObjectByName('rain-splash').geometry
+ let roofs=0
+ for(let i=0;i<rain.attributes.seed.count;i++) if(rain.attributes.seed.getW(i)>3) roofs++
+ assert.ok(roofs>0,'roof rain must produce splashes at the roof, not at ground level')
  v.dispose()
 })

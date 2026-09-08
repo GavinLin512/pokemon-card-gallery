@@ -1,6 +1,6 @@
 <script>
   // 博士對話框（PLAN §9.5）：第一次進入視窗時逐字顯示，點擊立即全文，已播完不重播。
-  let { text } = $props()
+  let { text, instant = false } = $props()
 
   const CHAR_MS = 40
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -24,7 +24,7 @@
   function start() {
     if (started) return
     started = true
-    if (reduced) return finish()
+    if (reduced || instant) return finish()
     let i = 0
     timer = setInterval(() => {
       i += 1
@@ -54,6 +54,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  role="button"
+  tabindex="0"
+  aria-label="顯示博士完整說明"
   class="dialog panel"
   class:done
   bind:this={root}
