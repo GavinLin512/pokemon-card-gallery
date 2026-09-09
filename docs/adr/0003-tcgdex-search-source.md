@@ -34,6 +34,11 @@ CDN 只有 pokemontcg.io 格式的集號與卡號，稀有度字彙也是 pokemo
 以凍結區 `cards.json` 的 88 張劍盾卡驗證，74 張逐欄相同；其餘差異為 pokemontcg.io 自身的資料特例
 （促銷卡的實際稀有度、宇宙閃 Cosmos、極少數金色 VSTAR），CardProxy 的促銷卡規則會自行補正，未補正者只影響 CSS 通用效果，遮罩層不受影響。
 
+## 151 系列（2026-09-10）
+
+搜尋依目前系列帶入集號條件（劍盾 `swsh`、151 `sv03.5`），151 的稀有度字串直接轉成 pokemontcg.io 大小寫，
+閃卡類型另有一組 10 種與 151 站點對應；細節見 PLAN §15.7。
+
 ## 已知限制
 
 - TCGdex 分不出 `Rare Holo Cosmos`，這類卡顯示為一般 `Rare`。

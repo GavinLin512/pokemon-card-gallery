@@ -1,5 +1,5 @@
 // TCGdex 轉接層（PLAN §6.2、ADR-0003）。
-// 搜尋改由 TCGdex GraphQL 取得英文劍盾卡，這裡把回應轉成 pokemontcg.io 的欄位格式：
+// 搜尋改由 TCGdex GraphQL 取得英文劍盾卡與 151 卡（PLAN §15.7，依系列擇一），這裡把回應轉成 pokemontcg.io 的欄位格式：
 // 凍結區 CardProxy 依 set、number、rarity、subtypes 決定閃卡遮罩路徑（poke-holo CDN 只有
 // pokemontcg.io 格式的集號與卡號），凍結區 CSS 也依 data-rarity、data-subtypes 選擇效果，
 // 所以輸出必須與 pokemontcg.io 逐字相同。純函式，無瀏覽器相依，供 tests/ 直接測試。
@@ -39,8 +39,24 @@ const SET_TABLE = [
   ['swsh12', 'swsh12'],
   ['swsh12tg', 'swsh12tg'],
   ['swsh12.5', 'swsh12pt5'],
-  ['swsh12.5gg', 'swsh12pt5gg']
+  ['swsh12.5gg', 'swsh12pt5gg'],
+  // 151 系列（PLAN §15）：只在系列為 151 時查詢
+  ['sv03.5', 'sv3pt5']
 ]
+/** 各系列送給 TCGdex 的集號條件（id 子字串比對） */
+export const SERIES_SET_FILTER = { swsh: 'swsh', 151: 'sv03.5' }
+const SET_151 = 'sv3pt5'
+/** 151 的 TCGdex 稀有度 -> pokemontcg.io 大小寫（以小寫比對） */
+const SV_RARITY = new Map([
+  ['common', 'Common'],
+  ['uncommon', 'Uncommon'],
+  ['rare', 'Rare'],
+  ['double rare', 'Double Rare'],
+  ['illustration rare', 'Illustration Rare'],
+  ['ultra rare', 'Ultra Rare'],
+  ['special illustration rare', 'Special Illustration Rare'],
+  ['hyper rare', 'Hyper Rare']
+])
 const SET_ID = new Map(SET_TABLE)
 const SET_ORDER = new Map(SET_TABLE.map(([, ptcg], i) => [ptcg, i]))
 
@@ -88,6 +104,8 @@ export function mapRarity(card, ptcgSet) {
   const category = card.category
   const isV = card.suffix === 'V' || card.stage === 'VMAX' || card.stage === 'VSTAR'
   const gallery = GALLERY.test(ptcgSet)
+
+  if (ptcgSet === SET_151) return SV_RARITY.get(r.toLowerCase()) ?? 'Common'
 
   // pokemontcg.io 只在畫廊集的一般閃卡加 Trainer Gallery 前綴，V 系列與全圖訓練家與主集相同，秘稀一律金卡
   if (gallery && (r === 'Rare' || r === 'Holo Rare')) return 'Trainer Gallery Rare Holo'
@@ -141,6 +159,7 @@ export function mapSubtypes(card) {
     if (stage) out.push(stage)
     // pokemontcg.io 的 VSTAR、V-UNION 只有單一 subtype，不另加 V
     if (card.suffix === 'V' && card.stage !== 'VSTAR' && card.stage !== 'V-UNION') out.push('V')
+    if (card.suffix === 'ex') out.push('ex')
     if (/^Radiant\s/.test(card.name ?? '')) out.push('Radiant')
     return out.length ? out : ['Basic']
   }
@@ -224,8 +243,32 @@ export const FOIL_TYPES = [
   { id: 'shiny-vault', name: '閃色寶藏', blocks: [{ rarity: 'Shiny rare' }], test: (c) => c.set === 'swsh45sv' }
 ]
 
+/** 151 的閃卡類型（PLAN §15.7）：id 與 151 站點相同；Illustration rare 是子字串會連特別插畫稀有命中，test 以完全相符過濾 */
+const MASTERBALL_151 = [1, 4, 7, 25, 133, 144, 146, 161]
+export const FOIL_TYPES_151 = [
+  { id: '151-common', name: '普通與非普通', blocks: [{ rarity: 'Common' }, { rarity: 'Uncommon' }], isReverse: false, test: (c) => c.rarity === 'Common' || c.rarity === 'Uncommon' },
+  { id: '151-pokeball', name: '精靈球反閃', blocks: [{ rarity: 'Common' }, { rarity: 'Uncommon' }], isReverse: true, test: (c) => c.rarity === 'Common' || c.rarity === 'Uncommon' },
+  { id: '151-masterball', name: '大師球反閃', isReverse: true, byId: () => MASTERBALL_151.map((n) => `sv03.5-${String(n).padStart(3, '0')}`), test: (c) => c.set === SET_151 && MASTERBALL_151.includes(Number(c.number)) },
+  // Rare 是子字串，會連 Double、Illustration、Ultra、Hyper 一起命中，依 stage 分塊避免 100 張上限
+  { id: '151-holo', name: '閃卡', blocks: [{ rarity: 'Rare', stage: 'Basic' }, { rarity: 'Rare', stage: 'Stage1' }, { rarity: 'Rare', stage: 'Stage2' }], test: (c) => c.rarity === 'Rare' },
+  { id: '151-ex', name: '寶可夢 ex', blocks: [{ rarity: 'Double rare' }], test: (c) => c.rarity === 'Double Rare' },
+  { id: '151-illustration', name: '插畫稀有', blocks: [{ rarity: 'Illustration rare' }], test: (c) => c.rarity === 'Illustration Rare' },
+  { id: '151-ex-full-art', name: 'ex 全圖', blocks: [{ rarity: 'Ultra Rare', category: 'Pokemon' }], test: (c) => c.rarity === 'Ultra Rare' && c.supertype === 'Pokémon' },
+  { id: '151-trainer-full-art', name: '訓練家全圖', blocks: [{ rarity: 'Ultra Rare', category: 'Trainer' }], test: (c) => c.rarity === 'Ultra Rare' && c.supertype === 'Trainer' },
+  { id: '151-special-illustration', name: '特別插畫稀有', blocks: [{ rarity: 'Special illustration rare' }], test: (c) => c.rarity === 'Special Illustration Rare' },
+  { id: '151-hyper', name: '超稀有', blocks: [{ rarity: 'Hyper rare' }], test: (c) => c.rarity === 'Hyper Rare' }
+]
+
+export const FOIL_TYPES_BY_SERIES = { swsh: FOIL_TYPES, 151: FOIL_TYPES_151 }
+
+/** 目前系列的閃卡類型清單；未知系列回劍盾 */
+export function foilTypesFor(series) {
+  return FOIL_TYPES_BY_SERIES[series] ?? FOIL_TYPES
+}
+
+/** 依 id 找閃卡類型，兩個系列的 id 不重複 */
 export function foilType(id) {
-  return FOIL_TYPES.find((t) => t.id === id) ?? null
+  return FOIL_TYPES.find((t) => t.id === id) ?? FOIL_TYPES_151.find((t) => t.id === id) ?? null
 }
 
 function gqlFilters(obj) {
@@ -236,10 +279,10 @@ function gqlFilters(obj) {
 
 /**
  * 組 GraphQL 查詢：名稱 × 篩選條件，每個組合一個別名欄位（TCGdex 的 name 篩選是不分大小寫的子字串比對，
- * 無法用 OR 合併）。未指定 id 時以 id 含 "swsh" 對應原本的 set.id:swsh*。names 為空時只依篩選條件查詢。
+ * 無法用 OR 合併）。setFilter 為系列的集號條件（SERIES_SET_FILTER，預設劍盾）。names 為空時只依篩選條件查詢。
  * 給 ids 時改為逐張 card(id) 查詢，忽略 names 與 blocks。
  */
-export function buildQuery(names, blocks = [{}], limit = FETCH_LIMIT, ids = null) {
+export function buildQuery(names, blocks = [{}], limit = FETCH_LIMIT, ids = null, setFilter = SERIES_SET_FILTER.swsh) {
   const parts = []
   if (ids) {
     for (const id of ids) parts.push(`q${parts.length}: card(id: ${JSON.stringify(id)}) { ${CARD_FIELDS} }`)
@@ -248,7 +291,7 @@ export function buildQuery(names, blocks = [{}], limit = FETCH_LIMIT, ids = null
   const nameList = names.length ? names : [null]
   for (const name of nameList) {
     for (const block of blocks) {
-      const filters = { ...(name ? { name } : {}), id: 'swsh', ...block }
+      const filters = { ...(name ? { name } : {}), id: setFilter, ...block }
       parts.push(
         `q${parts.length}: cards(filters: { ${gqlFilters(filters)} }, pagination: { page: 1, count: ${limit} }) { ${CARD_FIELDS} }`
       )

@@ -2,7 +2,8 @@
   // 搜尋框（PLAN §6.2、§6.3、§6.4）：輸入名稱，或展開面板點選閃卡類型。狀態與查詢在 stores/search.svelte.js。
   import { activeCard } from '../lib/stores/activeCard.js'
   import { search } from '../stores/search.svelte.js'
-  import { FOIL_TYPES } from '../config/tcgdex.js'
+  import { foilTypesFor } from '../config/tcgdex.js'
+  import { journey } from '../stores/journey.svelte.js'
 
   let open = $state(false)
   let root = $state()
@@ -68,9 +69,9 @@
 
   {#if open}
     <div id="foil-panel" class="panel-pop" role="group" aria-label="閃卡類型">
-      <p class="panel-title">點選閃卡類型，或輸入名稱一起找</p>
+      <p class="panel-title"><b>{journey.seriesInfo.full}</b> · 點選閃卡類型，或輸入名稱一起找</p>
       <div class="chips">
-        {#each FOIL_TYPES as t (t.id)}
+        {#each foilTypesFor(journey.series) as t (t.id)}
           <button type="button" class="type-chip" class:active={search.foil === t.id} aria-pressed={search.foil === t.id} onclick={() => pick(t.id)}>
             {t.name}
           </button>
@@ -180,6 +181,10 @@
     font-family: var(--font-display);
     font-size: 14px;
     color: var(--ink-soft);
+  }
+  .panel-title b {
+    font-weight: 400;
+    color: var(--ink);
   }
   .chips {
     display: flex;

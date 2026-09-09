@@ -5,8 +5,7 @@
     "module": "ESNext",
     "allowJs": true,
     "checkJs": false,
-    "isolatedModules": true,
-    "baseUrl": "."
+    "isolatedModules": true
   },
   "include": ["src/**/*.js", "src/**/*.svelte"]
 }

@@ -10,6 +10,9 @@ import {
   buildQuery,
   parseResponse,
   FOIL_TYPES,
+  FOIL_TYPES_151,
+  SERIES_SET_FILTER,
+  foilTypesFor,
   foilType
 } from '../src/config/tcgdex.js'
 
@@ -173,6 +176,47 @@ test('buildQuery with ids emits card(id) aliases and parseResponse accepts singl
   assert.doesNotMatch(q, /Pikachu/)
   const out = parseResponse({ q0: { ...pikachuGold, id: 'swshp-SWSH012', localId: 'SWSH012', rarity: 'Promo', set: { id: 'swshp' } }, q1: null })
   assert.deepEqual(out.map((c) => c.id), ['swshp-SWSH012'])
+})
+
+test('151 cards map set, rarity vocabulary and ex subtype, and only match their own foil types', () => {
+  const charizard = { ...pikachuGold, id: 'sv03.5-006', localId: '006', name: 'Charizard ex', rarity: 'Double rare', stage: 'Stage2', suffix: 'ex', types: ['Fire'], set: { id: 'sv03.5' } }
+  assert.equal(mapSetId('sv03.5'), 'sv3pt5')
+  const card = toCard(charizard)
+  assert.equal(card.id, 'sv3pt5-6')
+  assert.equal(card.rarity, 'Double Rare')
+  assert.deepEqual(card.subtypes, ['Stage 2', 'ex'])
+  const r = (rarity) => mapRarity({ ...charizard, rarity }, 'sv3pt5')
+  assert.equal(r('Illustration rare'), 'Illustration Rare')
+  assert.equal(r('Special illustration rare'), 'Special Illustration Rare')
+  assert.equal(r('Ultra Rare'), 'Ultra Rare')
+  assert.equal(r('Hyper rare'), 'Hyper Rare')
+  assert.equal(r('Rare'), 'Rare')
+  assert.equal(r('Secret Rare'), 'Common')
+  assert.equal(mapRarity({ ...charizard, rarity: 'Secret Rare', set: { id: 'swsh12.5' } }, 'swsh12pt5'), 'Rare Secret')
+  assert.match(buildQuery(['Pikachu'], [{}], 36, null, SERIES_SET_FILTER['151']), /id: "sv03\.5"/)
+  assert.match(buildQuery(['Pikachu']), /id: "swsh"/)
+  assert.equal(foilTypesFor('151'), FOIL_TYPES_151)
+  assert.equal(foilTypesFor('swsh'), FOIL_TYPES)
+  assert.equal(foilTypesFor('nope'), FOIL_TYPES)
+  assert.equal(FOIL_TYPES_151.length, 10)
+  assert.ok(FOIL_TYPES_151.every((t) => t.id.startsWith('151-') && t.name && (t.blocks?.length || t.byId) && typeof t.test === 'function'))
+  const pass = (id, patch) => foilType(id).test({ ...card, ...patch }, {})
+  assert.ok(pass('151-ex', {}))
+  assert.ok(!pass('151-holo', {}))
+  assert.ok(pass('151-holo', { rarity: 'Rare' }))
+  assert.ok(pass('151-illustration', { rarity: 'Illustration Rare' }))
+  assert.ok(!pass('151-illustration', { rarity: 'Special Illustration Rare' }))
+  assert.ok(pass('151-special-illustration', { rarity: 'Special Illustration Rare' }))
+  assert.ok(pass('151-ex-full-art', { rarity: 'Ultra Rare' }))
+  assert.ok(!pass('151-trainer-full-art', { rarity: 'Ultra Rare' }))
+  assert.ok(pass('151-trainer-full-art', { rarity: 'Ultra Rare', supertype: 'Trainer' }))
+  assert.ok(pass('151-hyper', { rarity: 'Hyper Rare' }))
+  assert.ok(pass('151-masterball', { number: '25', rarity: 'Common' }))
+  assert.ok(!pass('151-masterball', { number: '26', rarity: 'Common' }))
+  assert.ok(!pass('151-masterball', { number: '25', set: 'swsh1' }))
+  assert.deepEqual(foilType('151-masterball').byId({}).slice(0, 2), ['sv03.5-001', 'sv03.5-004'])
+  assert.ok(foilType('151-pokeball').isReverse)
+  assert.equal(new Set([...FOIL_TYPES, ...FOIL_TYPES_151].map((t) => t.id)).size, 28)
 })
 
 test('parseResponse merges aliases, drops duplicates and unsupported sets', () => {

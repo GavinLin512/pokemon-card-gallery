@@ -2,7 +2,8 @@
 // Search.svelte 只負責輸入框，SearchResults.svelte 只負責結果，狀態都在這裡。
 
 import { cards as cardRegistry } from './cards.svelte.js'
-import { GRAPHQL_URL, buildQuery, parseResponse, foilType } from '../config/tcgdex.js'
+import { GRAPHQL_URL, SERIES_SET_FILTER, buildQuery, parseResponse, foilType } from '../config/tcgdex.js'
+import { journey } from './journey.svelte.js'
 import altArts from '../lib/components/alternate-arts.json'
 import promos from '../lib/components/promos.json'
 
@@ -149,7 +150,8 @@ async function run() {
       const parts = await Promise.all(batches.map((b) => fetchWithRetry(buildQuery([], [{}], undefined, b))))
       data = Object.fromEntries(parts.flatMap((part, i) => Object.entries(part).map(([k, v]) => [`b${i}${k}`, v])))
     } else {
-      data = await fetchWithRetry(buildQuery(names, type?.blocks))
+      // 只在目前系列內找（PLAN §15.7）
+      data = await fetchWithRetry(buildQuery(names, type?.blocks, undefined, null, SERIES_SET_FILTER[journey.series]))
     }
     // 為了顯示中文名，英文模式也載入譯名對照（首次搜尋才載，之後快取）
     await loadNames()

@@ -120,6 +120,7 @@
   /** 切換系列（PLAN §15）：換時間軸、更新網址 ?series 與偏好，位置歸零；相同系列回傳 false。 */
   function applySeries(id) {
     if (!journey.setSeries(id)) return false
+    search.clear() // 搜尋只在目前系列內找，切換後結果不再適用
     const url = new URL(location.href)
     if (id === DEFAULT_SERIES) url.searchParams.delete('series'); else url.searchParams.set('series', id)
     url.hash = ''
@@ -359,7 +360,7 @@
 {#if journey.panel}
   <div class="panel-backdrop" class:concealed={!!selectedSearchCard} aria-hidden="true"></div>
   <div tabindex="-1" class="game-panel" class:concealed={!!selectedSearchCard} class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
-    <header class="panel-header"><div><p class="eyebrow">冒險隨身工具</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
+    <header class="panel-header"><div><p class="eyebrow">冒險隨身工具{journey.panel === 'search' ? ` · 目前為${journey.seriesInfo.full}` : ''}</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
     <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
     <div class="panel-scroll" bind:this={searchView}>
       {#if journey.panel === 'map'}<JourneyMap {navigate} {switchSeries} />
