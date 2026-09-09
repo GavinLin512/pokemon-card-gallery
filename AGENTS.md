@@ -14,6 +14,7 @@
 ## 約束
 
 - 凍結區不得修改：`public/css/**`、`public/data/cards.json`、`public/img/**`、`public/foils.txt`、`public/favicon.png`、`src/lib/**`。
+- 第二凍結區（151 系列，ADR-0005）：`src/lib151/**`、`public/data/cards-151.json`、`public/img151/**` 不得修改；`public/css151/cards-151.css` 為 `scripts/scope-151-css.mjs` 產生檔，不得手改。
 - Vite `base` 固定 `/`。新元件用 runes，凍結區以 legacy mode 執行。
 - 環境變數見 `.env.local.example`，不提交 `.env.local`。
 
