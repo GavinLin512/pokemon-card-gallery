@@ -1,6 +1,13 @@
 <script>
   import { search } from '../stores/search.svelte.js'
   let { selectCard } = $props()
+  /** TCGdex 部分卡牌只有 high.webp 沒有 low.webp，縮圖 404 或連線中斷時改載大圖（僅切換一次，避免無限重試） */
+  function fallback(event) {
+    const img = event.currentTarget
+    const large = img.dataset.large
+    if (!large || img.src === large) return
+    img.src = large
+  }
 </script>
 <section class="search-results" aria-label="搜尋結果" aria-live="polite">
   {#if search.status === 'idle'}
@@ -13,7 +20,7 @@
     <p class="result-message">{search.matched.length ? search.matched.map(m => m.zh).join('、') + ' · ' : ''}{search.foilName ? search.foilName + ' · ' : ''}找到 {search.results.length} 張卡牌</p>
     <div class="result-grid">
       {#each search.results as card (card.id)}
-        <button class="result" onclick={e => selectCard(card, e.currentTarget)} aria-label={`放大 ${card.zh || card.name}`}><img src={card.images.small ?? card.images.large} alt={card.name} loading="lazy" /><strong>{card.zh || card.name}</strong><small>{card.zh ? card.name : card.set}</small></button>
+        <button class="result" onclick={e => selectCard(card, e.currentTarget)} aria-label={`放大 ${card.zh || card.name}`}><img src={card.images.small ?? card.images.large} alt={card.name} loading="lazy" data-large={card.images.large} onerror={fallback} /><strong>{card.zh || card.name}</strong><small>{card.zh ? card.name : card.set}</small></button>
       {/each}
     </div>
   {/if}
