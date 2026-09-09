@@ -27,6 +27,8 @@ CDN 只有 pokemontcg.io 格式的集號與卡號，稀有度字彙也是 pokemo
   由 CardProxy 依 SV 卡號自行轉為 Shiny。
 - subtypes：由 category、stage、suffix、trainerType、energyType 拼出。
 - 圖片：優先 TCGdex 的 webp；TG、GG、SV 畫廊集與部分促銷卡 TCGdex 沒有圖片，退回 `images.pokemontcg.io`（與其 API 是分開的 CDN）。
+  TCGdex 每集約 3% 的卡只有 `high.webp` 沒有 `low.webp`（2026-09-09 實測 swsh1 7 張、swsh9 11 張、swshp 11 張），
+  搜尋結果縮圖載入失敗時由 `SearchResults` 的 onerror 改載 `images.large`，僅切換一次避免無限重試。
 - 排序：GraphQL 的 sort 參數無效，改依集號發行順序表在前端排序，促銷卡沉底。
 
 以凍結區 `cards.json` 的 88 張劍盾卡驗證，74 張逐欄相同；其餘差異為 pokemontcg.io 自身的資料特例

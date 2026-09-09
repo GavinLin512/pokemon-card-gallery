@@ -130,6 +130,7 @@ pokemon-card-gallery/
   `id` 含 `swsh` 對應劍盾系列。回應由 `src/config/tcgdex.js` 轉成 pokemontcg.io 格式（集號、卡號、稀有度、subtypes、圖片），
   前端依集號發行順序排序後取前 36 張；轉換規則與驗證結果見 ADR-0003。免金鑰。輸入至少 3 字元，666ms debounce（與原作相同）。
 - 卡圖：優先 TCGdex webp；TG、GG、SV 畫廊集與部分促銷卡 TCGdex 沒有圖片，退回 `images.pokemontcg.io`。
+  搜尋結果縮圖用 `low.webp`，放大用 `high.webp`；TCGdex 每集約 3% 的卡只有 `high.webp`，縮圖 404 或連線中斷時 `SearchResults` 以 onerror 改載大圖，僅切換一次。
 - 普通、非普通卡隨機標為反閃（與原作相同）。
 - 查無結果：顯示「找不到這張卡牌，請試試英文名稱」，並保留原作的「Computer Error」卡。
 - 搜尋結果的卡牌同樣可捕捉。
