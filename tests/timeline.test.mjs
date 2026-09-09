@@ -1,21 +1,44 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { journeyStops } from '../src/config/journeyStops.js'
+import { readFileSync } from 'node:fs'
+import { journeyStops, stopsFor } from '../src/config/journeyStops.js'
 import { sections } from '../src/config/sections.js'
+import { SERIES, allSections, seriesOfSection } from '../src/config/series.js'
 import { createTimeline, resolvePosition, landingFor, restorePosition, advancePosition } from '../src/journey/timeline.js'
 
 const timeline = createTimeline(journeyStops)
-test('18 stops preserve category order and map to stable dwell centers', () => {
+test('each series preserves category order and maps to stable dwell centers', () => {
   assert.deepEqual(journeyStops.map(s => s.id), sections.map(s => s.id))
-  assert.equal(timeline.segments.length, 18)
-  let previous = -1
-  for (const s of timeline.segments) {
-    const resolved = resolvePosition(timeline, landingFor(timeline, s.id))
-    assert.equal(resolved.stop.id, s.id)
-    assert.equal(resolved.progress, s.progress)
-    assert.ok(s.progress > previous)
-    assert.ok(Math.abs(resolved.local - .5) < 1e-12)
-    previous = s.progress
+  assert.deepEqual(SERIES.map(s => s.sections.length), [18, 10])
+  for (const series of SERIES) {
+    const line = createTimeline(stopsFor(series.sections))
+    assert.equal(line.segments.length, series.sections.length)
+    let previous = -1
+    for (const s of line.segments) {
+      const resolved = resolvePosition(line, landingFor(line, s.id))
+      assert.equal(resolved.stop.id, s.id)
+      assert.equal(resolved.progress, s.progress)
+      assert.ok(s.progress > previous)
+      assert.ok(Math.abs(resolved.local - .5) < 1e-12)
+      previous = s.progress
+    }
+  }
+})
+test('section ids are unique across series and 151 stops reference real cards, at most 6 each', () => {
+  const ids = allSections.map(s => s.id)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.equal(seriesOfSection('common'), 'swsh')
+  assert.equal(seriesOfSection('151-hyper'), '151')
+  assert.equal(seriesOfSection('missing'), null)
+  const known = new Set(JSON.parse(readFileSync(new URL('../public/data/cards-151.json', import.meta.url), 'utf8')).map(c => c.id))
+  const seen = new Set()
+  for (const section of SERIES[1].sections) {
+    assert.ok(section.ids.length >= 3 && section.ids.length <= 6, section.id)
+    for (const id of section.ids) {
+      assert.ok(known.has(id), id)
+      assert.ok(!seen.has(id), id)
+      seen.add(id)
+    }
   }
 })
 test('continuous forward and reverse flight with stationary dwell and clamped endpoint', () => {

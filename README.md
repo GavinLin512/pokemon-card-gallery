@@ -4,6 +4,8 @@
 
 ## 狀態
 
+151 系列已併入（2026-09-09）：開場畫面與旅程地圖可切換「劍盾系列」（18 站）與「151 系列」（10 站／55 張），兩系列共用真新鎮到常磐市的路徑，切換後回到該系列第一站，網址 `?series=151` 與瀏覽器歷史可還原。151 閃卡效果來自原作者的 pokemon-cards-151，以第二凍結區與作用域化 CSS 併入（[ADR-0005](./docs/adr/0005-151-second-frozen-zone.md)、[PLAN §15](./docs/PLAN.md)）。建置、Svelte 檢查與 28 項測試通過；headless Chrome 已確認 151 的 ex、大師球反閃與劍盾閃卡站點正常渲染、無 console error。151 的放大層疊與手機效能仍待實機驗收；搜尋尚未涵蓋 151。
+
 滿版 UI 重製已實作（2026-09-08）：18 站／87 張卡牌的自然捲動旅程、中央卡牌與左右預覽、旅程地圖、搜尋／圖鑑遊戲面板、載入後下降開場、重訪選卡記憶與瀏覽器歷史恢復。依實作回饋，捲動使用共用平滑進度，到站改為約 0.28 秒輕快浮現，取消壓暗與光圈。
 
 建置、Svelte 檢查（0 錯誤、1 個既有警告）與 26 項測試通過。瀏覽器已驗證全部展示卡牌、捕捉／放生、圖鑑跳卡、中文搜尋、面板返回、鍵盤與拖曳、390×844／844×390 排版、減少動態、WebGL／資料／圖片失敗降級。手機實機、iOS 感應授權與長時間效能仍待驗收；詳見 [驗證記錄](./docs/UI-REMAKE-QA.md) 與 [重製計畫](./docs/UI-REMAKE-PLAN.md)。以下保留歷次實作紀錄。
@@ -36,10 +38,15 @@ npm run dev
 - `public/css/**`、`public/data/cards.json`、`public/img/**`、`public/foils.txt`、`public/favicon.png`
 - `src/lib/**`
 
+151 系列（ADR-0005）另有第二凍結區，來自 [simeydotme/pokemon-cards-151](https://github.com/simeydotme/pokemon-cards-151)：
+
+- `src/lib151/**`（僅三行 import 改指向共用的 `src/lib`）、`public/data/cards-151.json`、`public/img151/**`
+- `public/css151/cards-151.css` 由 `scripts/scope-151-css.mjs` 產生，請勿手改
+
 ## 授權與致謝
 
 - 本專案沿用 GPL-3.0，見 [`LICENSE`](./LICENSE)。
-- 卡牌閃光效果：[Simon Goellner (simeydotme)](https://github.com/simeydotme/pokemon-cards-css)。
+- 卡牌閃光效果：[Simon Goellner (simeydotme)](https://github.com/simeydotme/pokemon-cards-css)；151 系列效果：[simeydotme/pokemon-cards-151](https://github.com/simeydotme/pokemon-cards-151)。
 - Galaxy Holo：[aschefield101](https://www.deviantart.com/aschefield101/art/HoloSheet-2012-313543843)。部分背景：[Vecteezy](https://www.vecteezy.com/free-photos)。
-- 卡牌圖像與資料：展示區沿用原作資料，來自 [pokemontcg.io](https://pokemontcg.io)；搜尋改用 [TCGdex](https://tcgdex.dev)，畫廊集與部分促銷卡圖片仍取自 pokemontcg.io。
+- 卡牌圖像與資料：展示區沿用原作資料（含 151 系列），來自 [pokemontcg.io](https://pokemontcg.io)；搜尋改用 [TCGdex](https://tcgdex.dev)，畫廊集與部分促銷卡圖片仍取自 pokemontcg.io。
 - 寶可夢中英譯名對照：[神奇寶貝百科「寶可夢列表（在其他語言中）」](https://wiki.52poke.com/zh-hant/寶可夢列表（在其他語言中）)，依 [CC BY-NC-SA 3.0](http://creativecommons.org/licenses/by-nc-sa/3.0/deed.zh-hant) 使用，本專案為非商業用途。Pokémon 相關商標屬任天堂、Creatures、GAME FREAK 所有。

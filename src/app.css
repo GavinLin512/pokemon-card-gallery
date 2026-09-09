@@ -217,6 +217,8 @@ button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible { outline: 3
 .opening-title > a { display: inline-flex; align-items: center; min-height: 44px; margin-top: 16px; font-size: 11px; text-underline-offset: 4px; }
 .primary { border: 2px solid var(--ink); border-radius: 12px; padding: 10px 24px; background: var(--paper); color: var(--ink); font-family: var(--font-display); box-shadow: 0 4px 0 var(--ink); margin-top: 28px; }
 .primary span { margin-left: 28px; color: var(--red); }
+.series-pick { margin-top: 26px; }
+.series-pick + .primary { margin-top: 16px; }
 .loading { inset: 0; display: grid; justify-items: center; align-content: center; text-align: center; color: var(--ink); background: linear-gradient(#9bd3ef, #e2f0e5); text-shadow: none; }
 .loading > .pokeball-symbol { width: 44px; height: 44px; margin-bottom: 20px; animation: loading-bob 1s ease-in-out infinite alternate; }
 .loading h1 { font-size: 42px; }

@@ -1,4 +1,5 @@
-// 18 個展示區設定（PLAN §7）。切片與旗標完全沿用原作 App.svelte 的 index，cards.json 已凍結，不得調整。
+// 劍盾系列的 18 個展示區（PLAN §7）。切片與旗標完全沿用原作 App.svelte 的 index，cards.json 已凍結，不得調整。
+// 151 系列的展示區見 sections151.js，兩個系列由 series.js 統整（PLAN §15）。
 // blurb 為博士對話框文字：大木博士第一人稱，30 到 50 字，只講卡牌本身，不講效果如何做出來。
 
 export const sections = [
@@ -148,15 +149,16 @@ export const sections = [
   }
 ]
 
-/** 依 slices 從 cards.json 陣列取出該展示區的卡牌。 */
+/** 依 slices 從 cards.json 陣列取出該展示區的卡牌；有 ids 的展示區（151）改依 id 查找，找不到的卡略過。 */
 export function sliceCards(cards, section) {
+  if (section.ids) return section.ids.flatMap(id => { const card = cards.find(c => c.id === id); return card ? [card] : [] })
   return section.slices.flatMap(([from, to]) => cards.slice(from, to))
 }
 
-/** 建立 cardId → sectionId 的對應（PLAN §9.2），供捕捉時寫入 sectionId。 */
-export function buildCardSectionMap(cards) {
+/** 建立 cardId → sectionId 的對應（PLAN §9.2），供捕捉時寫入 sectionId；list 可傳入跨系列的展示區清單。 */
+export function buildCardSectionMap(cards, list = sections) {
   const map = new Map()
-  for (const section of sections) {
+  for (const section of list) {
     for (const card of sliceCards(cards, section)) map.set(card.id, section.id)
   }
   return map

@@ -1,10 +1,11 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
-  import { sections, sliceCards, buildCardSectionMap } from './config/sections.js'
+  import { sections as swshSections, sliceCards, buildCardSectionMap } from './config/sections.js'
+  import { DEFAULT_SERIES, allSections, seriesOfSection } from './config/series.js'
   import { cards as cardRegistry } from './stores/cards.svelte.js'
   import { search } from './stores/search.svelte.js'
   import { viewport } from './stores/viewport.svelte.js'
-  import { journey, timeline } from './stores/journey.svelte.js'
+  import { journey } from './stores/journey.svelte.js'
   import { landingFor, restorePosition, advancePosition } from './journey/timeline.js'
   import { activeCard } from './lib/stores/activeCard.js'
   import JourneyHud from './components/JourneyHud.svelte'
@@ -16,10 +17,12 @@
   import SearchResults from './components/SearchResults.svelte'
   import PokedexDrawer from './components/PokedexDrawer.svelte'
   import CaptureButton from './components/CaptureButton.svelte'
+  import SeriesSwitch from './components/SeriesSwitch.svelte'
 
   const townScene = import('./scene/TownScene.svelte').catch(() => null)
   let cards = $state([])
   let loadError = $state(false)
+  let load151Error = $state(false)
   let sceneFailed = $state(false)
   let openingAmount = $state(1)
   let height = $state(window.innerHeight)
@@ -39,15 +42,15 @@
   let navigationToken = 0
   let hadActive = false
   let disposed = false
-  const grouped = $derived(sections.map(section => ({ section, cards: sliceCards(cards, section) })))
+  const grouped = $derived(journey.sections.map(section => ({ section, cards: sliceCards(cards, section) })))
   const stop = $derived(journey.current.stop)
   const currentCards = $derived(stop ? grouped[stop.index]?.cards ?? [] : [])
 
   function hashStop() {
-    try { const id = decodeURIComponent(location.hash.slice(1)); return sections.some(s => s.id === id) ? id : null } catch { return null }
+    try { const id = decodeURIComponent(location.hash.slice(1)); return allSections.some(s => s.id === id) ? id : null } catch { return null }
   }
   function savePosition() {
-    history.replaceState({ ...history.state, journeyPosition: journey.current.position }, '')
+    history.replaceState({ ...history.state, journeyPosition: journey.current.position, series: journey.series }, '')
   }
   function setPosition(position, direct = false) {
     cancelAnimationFrame(travelFrame)
@@ -94,23 +97,53 @@
       const response = await fetch('/data/cards.json', { signal: AbortSignal.timeout(20000) })
       if (!response.ok) throw new Error('cards')
       const data = await response.json()
-      if (!Array.isArray(data) || data.length < Math.max(...sections.flatMap(s => s.slices.map(([, end]) => end)))) throw new Error('cards')
+      if (!Array.isArray(data) || data.length < Math.max(...swshSections.flatMap(s => s.slices.map(([, end]) => end)))) throw new Error('cards')
+      const extra = await load151()
       if (disposed) return
-      cards = data
-      cardRegistry.register(data)
-      cardRegistry.setSectionMap(buildCardSectionMap(data))
+      cards = [...data, ...extra]
+      cardRegistry.register(cards)
+      cardRegistry.setSectionMap(buildCardSectionMap(cards, allSections))
       const image = new Image(); image.src = data[1].images.large
     } catch { if (!disposed) loadError = true }
   }
+  /** 151 系列（PLAN §15）：set 攤平為字串；失敗只讓第 19 站顯示提示，不影響其餘展示區。 */
+  async function load151() {
+    load151Error = false
+    try {
+      const response = await fetch('/data/cards-151.json', { signal: AbortSignal.timeout(20000) })
+      if (!response.ok) throw new Error('cards-151')
+      const data = await response.json()
+      if (!Array.isArray(data)) throw new Error('cards-151')
+      return data.map(card => ({ ...card, set: typeof card.set === 'string' ? card.set : card.set?.id }))
+    } catch { load151Error = true; return [] }
+  }
+  /** 切換系列（PLAN §15）：換時間軸、更新網址 ?series 與偏好，位置歸零；相同系列回傳 false。 */
+  function applySeries(id) {
+    if (!journey.setSeries(id)) return false
+    const url = new URL(location.href)
+    if (id === DEFAULT_SERIES) url.searchParams.delete('series'); else url.searchParams.set('series', id)
+    url.hash = ''
+    history.replaceState({ ...history.state, series: id, journeyPosition: 0 }, '', url)
+    return true
+  }
+  /** 使用者切換系列：開場畫面停在起點，旅途中則前往該系列第一站。 */
+  function switchSeries(id) {
+    if (!applySeries(id)) return
+    closePanel(false)
+    if (journey.opening) setPosition(0, true)
+    else navigate(journey.stops[0].id)
+  }
   async function navigate(id, cardId = null, record = true) {
-    const position = id ? landingFor(timeline, id) : 0
+    const targetSeries = id ? seriesOfSection(id) : null
+    if (targetSeries && targetSeries !== journey.series) applySeries(targetSeries)
+    const position = id ? landingFor(journey.timeline, id) : 0
     if (position === null) return
     const token = ++navigationToken
     finishOpening()
     closePanel(false)
     closeCard(false)
     savePosition()
-    if (record) history.pushState({ journeyPosition: position }, '', id ? `#${id}` : location.pathname + location.search)
+    if (record) history.pushState({ journeyPosition: position, series: journey.series }, '', id ? `#${id}` : location.pathname + location.search)
     journey.jumping = !viewport.reducedMotion
     if (journey.jumping) await new Promise(resolve => setTimeout(resolve, 160))
     if (token !== navigationToken || disposed) return
@@ -158,7 +191,7 @@
     }
   }
   function selectEntry(entry) {
-    const id = sections.some(s => s.id === entry.sectionId) ? entry.sectionId : cardRegistry.sectionOf(entry.id)
+    const id = allSections.some(s => s.id === entry.sectionId) ? entry.sectionId : cardRegistry.sectionOf(entry.id)
     if (id) navigate(id, entry.id)
     else { search.query = entry.name; openPanel('search', null) }
   }
@@ -207,7 +240,10 @@
     const previousRestoration = history.scrollRestoration
     history.scrollRestoration = 'manual'
     const hash = hashStop()
-    const restored = hash ? landingFor(timeline, hash) : restorePosition(timeline, history.state)
+    const hashSeries = hash ? seriesOfSection(hash) : null
+    if (hashSeries && hashSeries !== journey.series) applySeries(hashSeries)
+    else if (history.state?.series && history.state.series !== journey.series) applySeries(history.state.series)
+    const restored = hash ? landingFor(journey.timeline, hash) : restorePosition(journey.timeline, history.state)
     if (hash || restored > 0 || window.scrollY > 0) {
       finishOpening()
       setPosition(restored || window.scrollY / height, true)
@@ -234,7 +270,10 @@
       journey.jumping = false
       finishOpening(); closeCard(false); closePanel(false)
       const hash = hashStop()
-      setPosition(Number.isFinite(history.state?.journeyPosition) ? restorePosition(timeline, history.state) : hash ? landingFor(timeline, hash) : 0, true)
+      const hashSeries = hash ? seriesOfSection(hash) : null
+      if (history.state?.series && history.state.series !== journey.series) journey.setSeries(history.state.series)
+      else if (hashSeries && hashSeries !== journey.series) journey.setSeries(hashSeries)
+      setPosition(Number.isFinite(history.state?.journeyPosition) ? restorePosition(journey.timeline, history.state) : hash ? landingFor(journey.timeline, hash) : 0, true)
     }
     const skipOnInput = event => {
       if (!journey.opening) return
@@ -292,16 +331,18 @@
 {#await townScene then module}
   {#if module}<module.default {openingAmount} onready={() => ready()} onerror={() => ready(true)} />{/if}
 {/await}
-<div class="journey-distance" style:height={`${(timeline.length + 1) * height}px`} aria-hidden="true"></div>
+<div class="journey-distance" style:height={`${(journey.timeline.length + 1) * height}px`} aria-hidden="true"></div>
 <JourneyHud {openPanel} {navigate} />
 <main class="journey-stage" class:concealed={journey.panel === 'search' || !!selectedSearchCard} tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard} data-stop={stop?.id ?? 'travel'}>
   {#if !journey.sceneReady}
     <div class="opening-title loading" role="status"><span class="pokeball-symbol"></span><p class="eyebrow">一段閃閃發光的冒險</p><h1>寶可夢<br />卡牌展示館</h1><p>正在前往真新鎮…</p><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
   {:else if journey.opening || (!stop && journey.current.position < .6)}
-    <div class="opening-title"><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><button class="primary" onclick={() => navigate('common')}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
+    <div class="opening-title"><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><div class="series-pick"><SeriesSwitch value={journey.series} onchange={switchSeries} /></div><button class="primary" onclick={() => navigate(journey.stops[0].id)}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
   {:else if stop && cards.length}
     <div class="stop-heading" class:concealed={journey.expanded}><p class="eyebrow">{revisit ? '再次相遇' : '發現新的卡種'} <span> / {String(stop.index + 1).padStart(2, '0')}</span></p><h1>{stop.name}</h1></div>
-    {#if reveal}
+    {#if !currentCards.length}
+      <div class="data-status" role="alert">這一站的卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
+    {:else if reveal}
       {#key stop.id}
         <JourneyCarousel cards={currentCards} section={stop} />
         <div class="professor-slot" class:concealed={journey.expanded}><ProfessorDialog text={stop.blurb} instant={revisit} /></div>
@@ -321,7 +362,7 @@
     <header class="panel-header"><div><p class="eyebrow">冒險隨身工具</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
     <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
     <div class="panel-scroll" bind:this={searchView}>
-      {#if journey.panel === 'map'}<JourneyMap {navigate} />
+      {#if journey.panel === 'map'}<JourneyMap {navigate} {switchSeries} />
       {:else if journey.panel === 'search'}<Search /><SearchResults selectCard={selectSearchCard} />
       {:else}<PokedexDrawer {selectEntry} />{/if}
     </div>

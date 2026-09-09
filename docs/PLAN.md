@@ -48,6 +48,7 @@
 
 ```
 VITE_CDN=https://poke-holo.b-cdn.net   # 原作 foil/mask 圖層 CDN，2026-09-06 驗證可用
+VITE_CDN_151=https://poke-holo.b-cdn.net/foils/151   # 151 系列 foil/etch 圖層 CDN，2026-09-09 驗證可用；未設定時程式退回此值
 ```
 
 ## 5. 檔案結構
@@ -543,3 +544,64 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 | §10 手機配置與 §11 展示區掛載 | 單張聚焦輪播、接近滿版工具面板、依舞台需求掛載卡牌；具體規則見新版計畫 |
 
 凍結區、Vite base、語言、授權、日夜與屬性天氣規則等其餘約束繼續適用。§12 的舊版里程碑保留為歷史紀錄；新版以 P1 三站原型、P2 完整旅程與開場、P3 遊戲介面與工具、P4 完整驗收追蹤。完成各階段後再更新 README 實作狀態。
+
+## 15. 151 系列整合（2026-09-09）
+
+原作者另有 [pokemon-cards-151](https://github.com/simeydotme/pokemon-cards-151)（GPL-3.0）專案，以不同的 CSS 與元件實作朱紫「151」系列的閃卡效果。本節以最小改動把它併入旅程，作為第 19 站；搜尋暫不納入（見 §15.5）。
+
+### 15.1 已驗證的前提
+
+- 素材：同一個 CDN，但基底為 `https://poke-holo.b-cdn.net/foils/151`，路徑格式為 `foils/sv3-5_en_{三位卡號}_{ph|std}.foil.webp` 與 `etches/sv3-5_en_{三位卡號}_std.etch.webp`。本站 10 張卡全部驗證 200。
+- 元件：151 版 `Card.svelte` 與凍結區版本差 221 行，多了 `card__glitter` 與 `card__glare2` 兩層與不同的 CSS 變數；凍結區的 `Card` 與 `CardProxy` 無法渲染 151 效果。`helpers/Math.js`、`stores/activeCard.js`、`stores/orientation.js` 兩邊逐位元組相同，直接共用。
+- CSS：兩邊的 `cards.css`、`base.css`、`regular-holo.css` 差異大，且共用 `.card` 與 `data-rarity="rare holo"` 選擇器，全域同時載入會互相覆蓋，必須作用域化。
+- 資料：151 版 `cards.json` 207 張，pokemontcg.io 格式，與卡牌登錄表相容，只差 `set` 為物件。圖片沿用 `images.pokemontcg.io`，抽樣驗證可用。
+
+### 15.2 第二凍結區與產生檔
+
+| 路徑 | 性質 | 規則 |
+|---|---|---|
+| `src/lib151/components/Card.svelte` | 151 版元件，Svelte 3 語法以 legacy mode 執行 | 逐位元組複製，僅三行 import 改指向 `src/lib` 共用的 helpers 與 stores；不得改寫成 runes |
+| `public/css151/cards-151.css` | 由 `scripts/scope-151-css.mjs` 產生 | 不得手改，要改就重新產生；來源為 151 專案 `public/css` 中 index.html 實際載入的 11 個檔案 |
+| `public/data/cards-151.json` | 151 版 `cards.json` | 逐位元組複製 |
+| `public/img151/**` | 151 專用材質 | 只放 151 有而本專案沒有的檔案 |
+
+`scripts/scope-151-css.mjs <151 專案的 public/css 路徑>` 做三件事：每條規則前綴 `.era-151`，`:root` 改為 `.era-151`，`@keyframes` 內不動；`[data-rarity="rare holo"]` 改為 `[data-rarity="rare holo 151"]`，避免劍盾 `regular-holo.css` 漏進 151 卡牌；`url(/img/...)` 若本專案已有相同檔案則沿用，否則改指向 `/img151/`。151 上游引用的 `/img/glitter.webp` 在上游也不存在，改指向本專案既有的 `/img/glitter.png`。
+
+### 15.3 系列與停靠點
+
+- `src/config/series.js`：兩個系列 `swsh`（劍盾，18 站，沿用 §7）與 `151`（10 站，`sections151.js`），各自一套展示區與停靠點，共用同一條真新鎮到常磐市的路徑，進度平均分配。展示區 id 跨系列唯一（151 以 `151-` 開頭）。
+- `stores/journey.svelte.js`：每個系列各一條時間軸；`series` 狀態決定目前的 `timeline`、`stops`、`sections`。初始值依序取網址 `?series=`、localStorage、預設劍盾。
+- 切換系列：開場畫面與旅程地圖各有一個「劍盾系列 / 151 系列」切換。切換後網址更新 `?series=`（劍盾則移除）、清除 hash、記住偏好；開場畫面停在起點，旅途中前往該系列第一站。瀏覽器歷史紀錄帶 `series`，返回時先還原系列再還原位置；`#展示區` 連結若屬於另一系列會自動切換。
+- 圖鑑跳卡：捕捉記錄的 `sectionId` 跨系列查找，跳到另一系列的卡會先切換系列。
+- HUD 的站數與進度依目前系列；旅程地圖標題文字依系列。
+
+### 15.4 元件與資料接線
+
+- `src/config/foils151.js`：移植 151 版 `CardProxy` 的規則。卡號 1、4、7、25、133、144、146、161 固定為大師球反閃；反閃的普通卡為精靈球反閃；`Rare` 視為 `Rare Holo 151`；`Ultra Rare`、`Special Illustration Rare`、`Hyper Rare` 的 foil 走 `etches/`。原版對反閃卡有 20% 機率隨機升為大師球，本專案改為固定，不做隨機。CDN 基底讀 `VITE_CDN_151`，未設定時退回上述公開網址。
+- `JourneyCard.svelte`：卡牌 `set` 為 `sv3pt5` 時改用 `lib151` 的 `Card`，直接傳入 `foils151` 算出的 `rarity`、`foil`、`mask`，外層加 `.era-151`；其餘卡牌維持凍結區 `CardProxy`。
+- `sections151.js` 以 `ids` 指定 `cards-151.json` 的卡牌；`sliceCards` 同時支援 `slices` 與 `ids`。
+- `App.svelte`：`cards.json` 之後再載入 `cards-151.json`，`set` 攤平為字串後接在劍盾卡之後登錄；151 載入失敗只讓 151 的站點顯示載入失敗提示，劍盾旅程不受影響。
+- `index.html`：在劍盾樣式之後加一行 `/css151/cards-151.css`。
+
+### 15.5 151 系列的 10 站
+
+每站 3 到 6 張，151 效果層數比劍盾多，手機負擔較重，不再增加。55 張卡的 foil、etch 與卡圖網址已於 2026-09-09 全數驗證 200。
+
+| # | id | 卡種 | 卡號 |
+|---|---|---|---|
+| 1 | 151-common | 普通與非普通 | 10、16、19、39、52、54 |
+| 2 | 151-pokeball | 精靈球反閃 | 35、58、63、92、120、129 |
+| 3 | 151-masterball | 大師球反閃 | 1、4、7、25、133、144 |
+| 4 | 151-holo | 閃卡 | 26、94、130、134、149、150 |
+| 5 | 151-ex | 寶可夢 ex | 3、6、9、65、145、151 |
+| 6 | 151-illustration | 插畫稀有 | 166、168、170、173、175、181 |
+| 7 | 151-ex-full-art | ex 全圖 | 182、183、184、188、192、193 |
+| 8 | 151-trainer-full-art | 訓練家全圖 | 194、195、196、197 |
+| 9 | 151-special-illustration | 特別插畫稀有 | 198、199、200、201、202、203 |
+| 10 | 151-hyper | 超稀有 | 205、206、207 |
+
+### 15.6 暫不納入與風險
+
+- 搜尋加入 151 需另做 TCGdex `sv03.5` 集號對照與朱紫稀有度字彙，列為第二階段。
+- 151 的 `base.css` 沒有本專案劍盾版本的 `--translate-z` 放大前置處理，放大時層疊行為可能不同，需在手機實測。
+- 3D 場景兩個系列共用，不另做 151 專屬場景。

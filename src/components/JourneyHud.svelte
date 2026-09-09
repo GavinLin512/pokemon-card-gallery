@@ -1,7 +1,7 @@
 <script>
   import { dayCycle } from '../stores/dayCycle.svelte.js'
   import { pokedex } from '../stores/pokedex.svelte.js'
-  import { journey, timeline } from '../stores/journey.svelte.js'
+  import { journey } from '../stores/journey.svelte.js'
   import { locationAt } from '../config/journeyStops.js'
   import { resetBaseOrientation } from '../lib/stores/orientation.js'
   let { openPanel, navigate } = $props()
@@ -17,7 +17,7 @@
 <header class="journey-hud" inert={!!journey.panel || journey.expanded} class:concealed={journey.expanded}>
   <button class="location-badge" onclick={() => navigate(null)} aria-label="回到旅程起點">
     <span class="pokeball-symbol" aria-hidden="true"></span>
-    <span><small>寶可夢卡牌展示館</small><strong>{locationAt(journey.current.progress)}</strong></span>
+    <span><small>寶可夢卡牌展示館 · {journey.seriesInfo.full}</small><strong>{locationAt(journey.current.progress)}</strong></span>
   </button>
   <nav class="hud-tools" aria-label="旅程工具">
     <button onclick={e => openPanel('search', e.currentTarget)} aria-label="搜尋卡牌" aria-expanded={journey.panel === 'search'}><span aria-hidden="true">⌕</span><b>搜尋</b></button>
@@ -43,10 +43,10 @@
   </nav>
 </header>
 <footer class="journey-bar" inert={!!journey.panel || journey.expanded} class:concealed={journey.expanded}>
-  <div class="stop-indicator"><span class="stop-number">{String((journey.current.nearby?.index ?? 0) + 1).padStart(2, '0')}<small> / 18</small></span><span><small>{journey.current.stop ? '目前停靠' : '下一個停靠點'}</small><strong>{journey.current.nearby?.name}</strong></span></div>
-  <p class="scroll-hint">{journey.current.position >= timeline.length - .1 ? '旅程終點 · 還有更多卡牌等你探索' : '繼續向下捲動，探索下一站'} <span aria-hidden="true">↓</span></p>
+  <div class="stop-indicator"><span class="stop-number">{String((journey.current.nearby?.index ?? 0) + 1).padStart(2, '0')}<small> / {journey.stops.length}</small></span><span><small>{journey.current.stop ? '目前停靠' : '下一個停靠點'}</small><strong>{journey.current.nearby?.name}</strong></span></div>
+  <p class="scroll-hint">{journey.current.position >= journey.timeline.length - .1 ? '旅程終點 · 還有更多卡牌等你探索' : '繼續向下捲動，探索下一站'} <span aria-hidden="true">↓</span></p>
   <button class="map-button" onclick={e => openPanel('map', e.currentTarget)} aria-expanded={journey.panel === 'map'}><span aria-hidden="true">⚑</span> 旅程地圖</button>
-  <div class="route-progress" style:width={`${journey.current.position / timeline.length * 100}%`}></div>
+  <div class="route-progress" style:width={`${journey.current.position / journey.timeline.length * 100}%`}></div>
 </footer>
 <style>
   .journey-hud { position: fixed; z-index: 35; inset: max(24px, env(safe-area-inset-top)) 28px auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; pointer-events: none; }

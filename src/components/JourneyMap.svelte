@@ -1,15 +1,16 @@
 <script>
-  import { journeyStops } from '../config/journeyStops.js'
   import { journey } from '../stores/journey.svelte.js'
-  let { navigate } = $props()
+  import SeriesSwitch from './SeriesSwitch.svelte'
+  let { navigate, switchSeries } = $props()
 </script>
-<p class="map-intro">從真新鎮出發，沿著一號道路前往常磐市。<br />選一個停靠點，繼續你的卡牌旅程。</p>
+<div class="map-series"><SeriesSwitch value={journey.series} onchange={switchSeries} /><small>切換系列會回到該系列的第一站</small></div>
+<p class="map-intro">{journey.seriesInfo.intro}<br />選一個停靠點，繼續你的卡牌旅程。</p>
 <div class="map-regions">
   {#each ['真新鎮', '一號道路', '常磐市'] as location, region}
     <section class="map-region">
       <h3><span aria-hidden="true">{['⌂', '♧', '⚑'][region]}</span>{location}</h3>
       <ol>
-        {#each journeyStops.filter(s => s.location === location) as stop}
+        {#each journey.stops.filter(s => s.location === location) as stop (stop.id)}
           <li><button class:here={journey.current.stop?.id === stop.id} aria-current={journey.current.stop?.id === stop.id ? 'step' : undefined} onclick={() => navigate(stop.id)}><span class="map-pin" class:visited={journey.visited[stop.id]}>{String(stop.index + 1).padStart(2, '0')}</span><span>{stop.name}<small>{journey.current.stop?.id === stop.id ? '你在這裡' : journey.visited[stop.id] ? '已到訪' : '等待探索'}</small></span><span class="map-arrow" aria-hidden="true">↗</span></button></li>
         {/each}
       </ol>
@@ -17,7 +18,9 @@
   {/each}
 </div>
 <style>
-  .map-intro { color: var(--ink-soft); font-size: 14px; margin: 4px 0 28px; }
+  .map-series { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 18px; }
+  .map-series small { color: var(--ink-soft); font-size: 12px; }
+  .map-intro { color: var(--ink-soft); font-size: 14px; margin: 0 0 28px; }
   .map-regions { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 24px; }
   h3 { display: flex; gap: 9px; align-items: center; padding-bottom: 14px; border-bottom: 2px solid var(--ink); font-size: 22px; }
   h3 > span { font-size: 26px; color: #457d63; }
