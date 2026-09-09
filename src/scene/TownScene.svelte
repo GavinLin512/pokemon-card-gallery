@@ -56,7 +56,8 @@
     if ($activeCard) town.setWeather(weatherKeyFor(card))
   })
   $effect(() => {
-    town?.setReducedMotion(viewport.reducedMotion)
+    // ?cardtest=nogl：卡牌放大期間停止渲染迴圈，只保留最後一幀
+    town?.setReducedMotion(viewport.reducedMotion || (viewport.cardTest.has('nogl') && !!$activeCard))
   })
   $effect(() => {
     town?.setMobile(viewport.isMobile)

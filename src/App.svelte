@@ -203,6 +203,7 @@
 
   onMount(() => {
     document.getElementById('boot-screen')?.remove()
+    if (viewport.cardTest.size) document.documentElement.dataset.cardtest = [...viewport.cardTest].join(' ')
     const previousRestoration = history.scrollRestoration
     history.scrollRestoration = 'manual'
     const hash = hashStop()

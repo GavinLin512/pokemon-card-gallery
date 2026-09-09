@@ -9,6 +9,28 @@ let reducedMotion = $state(motionQuery.matches)
 mobileQuery.addEventListener('change', (e) => (isMobile = e.matches))
 motionQuery.addEventListener('change', (e) => (reducedMotion = e.matches))
 
+/**
+ * 手機閃卡測試旗標，由網址 ?cardtest= 讀入（逗號分隔）：
+ *   flat  關閉閃卡各層 will-change，減少合成層
+ *   scale 放大倍率上限 1.25
+ *   iso   card__rotator 加 isolation 與 overflow:hidden（會犧牲翻面背面）
+ *   nogl  卡牌放大時暫停三維場景
+ *   all   同時開啟 flat、scale、nogl
+ * 例：/?cardtest=all 或 /?cardtest=flat,nogl#kanto-starters
+ */
+function parseCardTest() {
+  try {
+    const raw = new URLSearchParams(location.search).get('cardtest')
+    if (!raw) return new Set()
+    const flags = new Set(raw.split(',').map(f => f.trim().toLowerCase()).filter(Boolean))
+    if (flags.has('all') || flags.has('1') || flags.has('on')) ['flat', 'scale', 'nogl'].forEach(f => flags.add(f))
+    return flags
+  } catch {
+    return new Set()
+  }
+}
+const cardTest = parseCardTest()
+
 let webgl
 function detectWebGL() {
   if (webgl !== undefined) return webgl
@@ -34,5 +56,9 @@ export const viewport = {
   },
   get webgl() {
     return detectWebGL()
+  },
+  /** ?cardtest= 旗標集合，空集合代表未啟用 */
+  get cardTest() {
+    return cardTest
   }
 }
