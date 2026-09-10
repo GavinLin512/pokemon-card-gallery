@@ -15,7 +15,6 @@ motionQuery.addEventListener('change', (e) => (reducedMotion = e.matches))
  *   scale 放大倍率上限 1.25
  *   iso   card__rotator 加 isolation 與 overflow:hidden（會犧牲翻面背面）
  *   nogl  卡牌放大時暫停三維場景
- *   noz   拿掉正面各閃卡層的 translateZ 與 preserve-3d，只保留翻面（針對 Blink 壓平 3D 圖層的閃爍）
  *   all   同時開啟 flat、scale、nogl
  * 例：/?cardtest=all 或 /?cardtest=flat,nogl#kanto-starters
  */
@@ -31,6 +30,20 @@ function parseCardTest() {
   }
 }
 const cardTest = parseCardTest()
+
+/**
+ * Android 上的 Blink 引擎（Chrome、Edge、Samsung Internet、WebView）會把帶濾鏡／混合模式的閃卡層
+ * 從 3D 情境壓平，凍結區 shine、glare 各層只差 0.2px 到 0.4px 的 translateZ，壓平後排序不穩而閃爍。
+ * 實測 iOS Safari 與 Android Firefox 正常，故只在 Android 非 Firefox 時把正面閃卡層改為平面（app.css html[data-flat-foil]）。
+ */
+const flatFoil = (() => {
+  try {
+    const ua = navigator.userAgent
+    return /Android/i.test(ua) && !/Firefox/i.test(ua)
+  } catch {
+    return false
+  }
+})()
 
 let webgl
 function detectWebGL() {
@@ -61,5 +74,9 @@ export const viewport = {
   /** ?cardtest= 旗標集合，空集合代表未啟用 */
   get cardTest() {
     return cardTest
+  },
+  /** Android Blink：正面閃卡層改為平面以避免放大時閃爍 */
+  get flatFoil() {
+    return flatFoil
   }
 }

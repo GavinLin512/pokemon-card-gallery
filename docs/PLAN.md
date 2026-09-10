@@ -501,6 +501,7 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 | 圖鑑 | 底部抽屜 |
 | 對話框 | 全寬，頭像縮小放左上 |
 | 場景 | 見 §8.4 降級 |
+| Android Blink 閃卡 | Android 非 Firefox 瀏覽器在 `<html>` 加 `data-flat-foil`，`app.css` 把卡牌正面閃卡層改為平面以避免放大閃爍；原因與取捨見 ADR-0006。除錯旗標 `?cardtest=flat,scale,iso,nogl` 保留 |
 
 ## 11. 效能
 

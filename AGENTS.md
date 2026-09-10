@@ -7,7 +7,7 @@
 
 - `docs/PLAN.md`：需求定稿與實作規格，實作一律以此為準。
 - `CONTEXT.md`：領域詞彙表，介面文案與命名依此。
-- `docs/adr/`：關鍵決策（凍結區與 Svelte 5 legacy mode、搜尋改用 fetch）。
+- `docs/adr/`：關鍵決策（凍結區與 Svelte 5 legacy mode、搜尋改用 fetch、Android Blink 閃卡平面化）。
 - `public/town/README.md`：真新鎮場景素材清單。
 - `README.md`：對外說明、授權與致謝；「狀態」段落記錄實作進度，完成階段後更新。
 

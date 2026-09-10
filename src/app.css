@@ -1,6 +1,6 @@
 /* 寶可夢卡牌展示館 全站樣式：真新鎮配色、字型、版型、reset。
    卡牌本身的樣式來自凍結區 public/css，此處不覆寫 .card；
-   唯一例外是檔尾 html[data-cardtest] 的手機閃卡測試覆寫，需以 ?cardtest= 開啟。 */
+   例外只有檔尾兩段：html[data-flat-foil] 的 Android Blink 修正，與 html[data-cardtest] 的手機閃卡測試覆寫。 */
 
 :root {
   /* 真新鎮配色 */
@@ -266,7 +266,17 @@ button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible { outline: 3
 .stop-heading { animation: stop-rise .26s ease-out both; }
 .journey-stage .professor-slot .dialog { animation: stop-rise .28s ease-out both; }
 
-/* 手機閃卡測試路徑（?cardtest=flat,scale,iso,nogl,noz 或 all）：
+/* Android Blink 閃卡修正（viewport.flatFoil，App 啟動時加上 <html data-flat-foil>）：
+   Blink 會把帶濾鏡／混合模式的圖層壓平，凍結區 shine、glare 各層只差 0.2px 到 0.4px 的 Z 偏移，
+   壓平後排序不穩定而在放大時閃爍。這裡讓正面所有層回到平面，依 DOM 順序與 z-index 疊放；
+   翻面仍由 .card__rotator 的 preserve-3d 負責。兩個系列（public/css 與 public/css151）類別名稱相同，一併生效。
+   實測 iOS Safari 與 Android Firefox 無此問題，不套用。 */
+html[data-flat-foil] .card__front,
+html[data-flat-foil] .card__front *,
+html[data-flat-foil] .card__shine::before,
+html[data-flat-foil] .card__shine::after { transform: none; -webkit-transform: none; transform-style: flat; -webkit-transform-style: flat; }
+
+/* 手機閃卡測試路徑（?cardtest=flat,scale,iso,nogl 或 all）：
    只在 <html data-cardtest> 存在時生效，用來驗證手機 Chrome 放大時閃爍破圖的原因。
    nogl 由 TownScene 處理，不在此處。 */
 html[data-cardtest]::after { content: 'cardtest: ' attr(data-cardtest); position: fixed; z-index: 600; left: 8px; bottom: max(8px, env(safe-area-inset-bottom)); padding: 2px 8px; border-radius: 6px; background: #122c29cc; color: #fff; font: 11px/1.6 monospace; pointer-events: none; }
@@ -277,9 +287,3 @@ html[data-cardtest~="flat"] .card__shine,
 html[data-cardtest~="flat"] .card__glare { will-change: auto; }
 html[data-cardtest~="scale"] .card__translater { transform: translate3d(var(--translate-x), var(--translate-y), var(--translate-z)) scale(min(var(--card-scale), 1.25)); }
 html[data-cardtest~="iso"] .card__rotator { isolation: isolate; overflow: hidden; }
-/* noz：Android Chrome（Blink）會把帶濾鏡／混合模式的圖層壓平，凍結區 shine、glare 各層只差 0.2px 到 0.4px 的 Z 偏移，
-   壓平後排序不穩定而閃爍。這裡讓正面所有層回到平面，依 DOM 順序與 z-index 疊放；翻面仍由 .card__rotator 的 preserve-3d 負責。 */
-html[data-cardtest~="noz"] .card__front,
-html[data-cardtest~="noz"] .card__front *,
-html[data-cardtest~="noz"] .card__shine::before,
-html[data-cardtest~="noz"] .card__shine::after { transform: none; -webkit-transform: none; transform-style: flat; -webkit-transform-style: flat; }
