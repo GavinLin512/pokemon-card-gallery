@@ -15,6 +15,7 @@ motionQuery.addEventListener('change', (e) => (reducedMotion = e.matches))
  *   scale 放大倍率上限 1.25
  *   iso   card__rotator 加 isolation 與 overflow:hidden（會犧牲翻面背面）
  *   nogl  卡牌放大時暫停三維場景
+ *   noz   拿掉正面各閃卡層的 translateZ 與 preserve-3d，只保留翻面（針對 Blink 壓平 3D 圖層的閃爍）
  *   all   同時開啟 flat、scale、nogl
  * 例：/?cardtest=all 或 /?cardtest=flat,nogl#kanto-starters
  */
