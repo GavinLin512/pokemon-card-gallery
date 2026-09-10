@@ -203,6 +203,10 @@ html.journey-locked { overflow: hidden; }
 body { overflow-x: clip; }
 button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+/* 關掉手機瀏覽器的點按高亮（Android Chrome 為淺藍半透明），卡牌放大時才不會先閃一層藍；鍵盤 focus-visible 外框不受影響。 */
+button, a, [tabindex], .card__rotator { -webkit-tap-highlight-color: transparent; }
+/* 凍結區第一次放大會做 360 度翻面，卡背圖（tcg.pokemon.com，延遲載入）未到時會露出 --card-back 的藍色底；改為透明，兩個系列皆覆寫。 */
+.card__back, .era-151 .card__back { background-color: transparent; }
 .journey-distance { width: 1px; pointer-events: none; }
 .journey-stage { position: fixed; inset: 0; z-index: 20; pointer-events: none; outline: none; }
 .journey-stage.concealed { display: none; }
