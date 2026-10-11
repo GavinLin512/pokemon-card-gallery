@@ -1,13 +1,15 @@
 import { Group, BufferGeometry, Float32BufferAttribute, ShaderMaterial, Points, Color,
   AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, MeshBasicMaterial, PointLight } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { createWeatherState, weatherLook } from './weather-state.js'
 import { particleVertex, particleFragment, effectFragmentEnd } from './weather-shaders.js'
 
-/** 世界座標天氣；與地景共用深度，所有資源集中建立、淡入淡出及釋放。 */
-export function createWeather(scene, { lowPower = false, trees = [], surfaces = [], flowers = [], clouds, ground = null } = {}) {
+/**
+ * 世界座標天氣；與地景共用深度，所有資源集中建立、淡入淡出及釋放。
+ * state 為場景外觀（look.js）的唯讀天氣權重與目前天氣，過場由場景外觀推進。
+ */
+export function createWeather(scene, { state, lowPower = false, trees = [], surfaces = [], flowers = [], clouds, ground = null } = {}) {
   const group = new Group(); group.name = 'type-weather'; scene.add(group)
-  const state = createWeatherState(), effects = [], resources = []
+  const effects = [], resources = []
   let time = 0, nextLightning = .4 + Math.random()*.6, flash = 0
   /** 地面高度：HD-2D 傳入含台地與階梯的地形函式，現行畫風為平地。 */
   const floorAt = ground ?? (() => 0)
@@ -174,11 +176,9 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
     lightningLight.position.set(x,Math.min(12,y-4),z);flash=.62
   }
   return {
-    state,group,
-    set(key){state.select(key)},
+    group,
     resize(w,h){for(const e of effects) if(e.material.uniforms.viewport) e.material.uniforms.viewport.value=h},
     update(dt,camera,reduced=false) {
-      state.update(dt,reduced)
       const step=Math.max(0,Math.min(dt,.1));if(!reduced) time+=step
       const weights=state.weights
       for(const e of effects) {
@@ -196,8 +196,6 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
       lightningLight.intensity=pulse*210*weights.sparks
       clouds?.setFlash(pulse*weights.sparks)
     },
-    environment(){return state.environment()},
-    look(base,env){return weatherLook(base,env)},
     setLook(look){for(const e of effects)e.material.uniforms.color.value.copy(e.color).multiplyScalar(1-look.windows*.58)},
     get activeKey(){return state.key},
     get count(){return effects.reduce((n,e)=>n+(e.mesh.isPoints?e.mesh.geometry.attributes.position.count:0),0)},

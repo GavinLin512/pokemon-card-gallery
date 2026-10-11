@@ -45,6 +45,9 @@
   let navigationToken = 0
   let hadActive = false
   let disposed = false
+  let saveTimer = 0
+  /** 開場下降期間攔截捲動的監聽；開場結束就卸下，之後的觸控捲動不必等主執行緒。 */
+  let releaseOpeningInput = () => {}
   /** 舞台內容的淡出／淡入時長（到站浮現仍由 app.css 的 stop-rise 負責）；減少動態時立即切換。 */
   const motion = (duration, delay = 0) => viewport.reducedMotion ? { duration: 0 } : { duration, delay }
   const grouped = $derived(journey.sections.map(section => ({ section, cards: sliceCards(cards, section) })))
@@ -85,6 +88,7 @@
     openingFrame = 0
     openingAmount = 0
     journey.opening = false
+    releaseOpeningInput()
   }
   /** 開場下降：場景就緒且訪客按下進站畫面的按鈕之後才開始，音樂也在同一下點擊啟動。 */
   function runOpening() {
@@ -272,7 +276,8 @@
       if (journey.paused) { window.scrollTo({ top: journey.current.position * height, behavior: 'instant' }); return }
       if (journey.opening) { finishOpening(); setPosition(0, true); return }
       travelTarget = window.scrollY / height
-      if (viewport.reducedMotion) { journey.move(travelTarget); savePosition(); return }
+      // Safari 限制 replaceState 每 30 秒 100 次，減少動態時等捲動停下再記錄位置。
+      if (viewport.reducedMotion) { journey.move(travelTarget); clearTimeout(saveTimer); saveTimer = setTimeout(savePosition, 200); return }
       if (!travelFrame) travelFrame = requestAnimationFrame(followScroll)
     }
     const onResize = async () => {
@@ -283,6 +288,7 @@
       if ($activeCard) window.dispatchEvent(new Event('scroll'))
     }
     const onHistory = () => {
+      clearTimeout(saveTimer)
       navigationToken++
       journey.jumping = false
       finishOpening(); closeCard(false); closePanel(false)
@@ -321,9 +327,17 @@
     window.addEventListener('resize', onResize)
     window.addEventListener('popstate', onHistory)
     window.addEventListener('hashchange', onHistory)
-    window.addEventListener('wheel', skipOnInput, { passive: false })
-    window.addEventListener('touchmove', skipOnInput, { passive: false })
-    window.addEventListener('keydown', skipOnInput)
+    if (journey.opening) {
+      window.addEventListener('wheel', skipOnInput, { passive: false })
+      window.addEventListener('touchmove', skipOnInput, { passive: false })
+      window.addEventListener('keydown', skipOnInput)
+      releaseOpeningInput = () => {
+        window.removeEventListener('wheel', skipOnInput)
+        window.removeEventListener('touchmove', skipOnInput)
+        window.removeEventListener('keydown', skipOnInput)
+        releaseOpeningInput = () => {}
+      }
+    }
     document.addEventListener('keydown', onKey, true)
     document.addEventListener('blur', guardBlur, true)
     if (import.meta.env.DEV) window.__journey = journey
@@ -336,9 +350,8 @@
       window.removeEventListener('resize', onResize)
       window.removeEventListener('popstate', onHistory)
       window.removeEventListener('hashchange', onHistory)
-      window.removeEventListener('wheel', skipOnInput)
-      window.removeEventListener('touchmove', skipOnInput)
-      window.removeEventListener('keydown', skipOnInput)
+      clearTimeout(saveTimer)
+      releaseOpeningInput()
       document.removeEventListener('keydown', onKey, true)
       document.removeEventListener('blur', guardBlur, true)
     }

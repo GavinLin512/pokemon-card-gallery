@@ -14,10 +14,16 @@ export function createWeatherState() {
       if (next === key) return
       from = { ...weights }; key = next; elapsed = 0
     },
+    /** 回傳權重是否改變；過場結束後為 false。 */
     update(dt, reduced = false) {
       elapsed = reduced ? 2 : Math.min(2, elapsed + Math.max(0, dt))
       const t = elapsed / (WEATHER_TRANSITION_MS / 1000), smooth = t * t * (3 - 2 * t)
-      for (const k of keys) weights[k] = from[k] + ((k === key ? 1 : 0) - from[k]) * smooth
+      let changed = false
+      for (const k of keys) {
+        const w = from[k] + ((k === key ? 1 : 0) - from[k]) * smooth
+        if (w !== weights[k]) { weights[k] = w; changed = true }
+      }
+      return changed
     },
     environment() {
       const out = { sky: new Color(0, 0, 0), cloud: new Color(0, 0, 0) }

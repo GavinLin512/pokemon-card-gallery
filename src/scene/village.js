@@ -9,7 +9,9 @@ import { createTufts } from './tufts.js'
 import { buildTerrain, groundAt, terrainAt, cameraRise } from './terrain.js'
 import { createBillboards } from './billboards.js'
 import { createVillagers } from './villagers.js'
+import { createSceneLook } from './look.js'
 import { BREEZE } from '../config/weather.js'
+import { periodByKey } from '../config/dayCycle.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 // 依真新鎮參考圖建立可受光的立體微縮模型；所有幾何與材質共用並集中釋放。
 import { Scene, Group, PerspectiveCamera, Fog, Vector3, Mesh, BoxGeometry, ConeGeometry, SphereGeometry, IcosahedronGeometry, CylinderGeometry, MeshStandardMaterial, HemisphereLight, DirectionalLight, Color, Box3, DoubleSide, Float32BufferAttribute } from 'three'
@@ -25,7 +27,8 @@ const SPRITE_NIGHT_FLOOR = .2
 /** 像素樹樹幹的半寬（相對看板寬度，48 格中的 4 格）：樹影從樹根朝光源那一側的邊緣開始延伸。 */
 const TREE_ROOT_SHIFT = 4 / 48
 
-export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
+/** sceneLook 為場景外觀（look.js），持有天氣權重；未傳入時以白天建立，供單獨建立村莊的測試使用。 */
+export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook = createSceneLook(periodByKey('day')) } = {}) {
   const scene = new Scene()
   const clouds = createClouds({ lowPower })
   scene.add(clouds.mesh)
@@ -305,7 +308,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
     root.add(mesh)
   })
   // HD-2D：天氣的落點與近地效果依含階梯的地形高度抬到台地上。
-  const weather = createWeather(scene, { lowPower, trees, flowers, surfaces, clouds, ground: hd2d ? terrainAt : null })
+  const weather = createWeather(scene, { state: sceneLook.weather, lowPower, trees, flowers, surfaces, clouds, ground: hd2d ? terrainAt : null })
   // 樹看板投下真實的樹形影子（billboards.js）；草叢與村民只接收陰影。
   const treeBillboards = hd2d && treeSprites.length ? createBillboards({
     canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
@@ -360,17 +363,17 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
     }
     weather.update(dt, camera, reduced)
     // 村民依目前屬性天氣（null 為原景）挑對話；時段由 town.js 切換時段時傳入。
-    villagers?.setWeather(weather.state.key)
+    villagers?.setWeather(sceneLook.weather.key)
     villagers?.update(Math.min(dt, .1), camera, reduced)
-    const env = weather.environment()
+    const env = sceneLook.environment
     // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
     weatherUniforms.wind.value = reduced ? 0 : hd2d ? Math.max(BREEZE, env.wind) : env.wind
     weatherUniforms.motion.value = reduced ? 0 : 1
     for (const key of ['aura','leaves','embers','orbs','shards','petals','rays','rain']) {
-      weatherUniforms[key].value = key === 'aura' && reduced ? 0 : weather.state.weights[key]
+      weatherUniforms[key].value = key === 'aura' && reduced ? 0 : sceneLook.weather.weights[key]
     }
   }
-  function setLook(look, env = weather.environment()) {
+  function setLook(look, env = sceneLook.environment) {
     weatherUniforms.night.value = look.windows
     clouds.setLook(look, env)
     weather.setLook(look)

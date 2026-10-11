@@ -17,9 +17,9 @@ import {
   PCFShadowMap
 } from 'three'
 import { MOON, STARS, PARALLAX_PX, HORIZON } from '../config/town.js'
-import { TRANSITION_MS } from '../config/dayCycle.js'
 import { createPostPass } from './post.js'
 import { createStars } from './stars.js'
+import { createSceneLook } from './look.js'
 import { createVillage } from './village.js'
 import { sampleFlight, LEVEL_PITCH, HD2D_PITCH } from './journey.js'
 
@@ -56,35 +56,7 @@ function drawMoon(size) {
   return c
 }
 
-const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-
-function lookFromPeriod(p) {
-  return {
-    skyTop: new Color(p.sky[0]),
-    skyBottom: new Color(p.sky[1]),
-    light: new Color(p.light).multiplyScalar(p.intensity),
-    stars: p.stars,
-    moon: p.moon,
-    windows: p.windows,
-    shadow: p.shadow ?? 1
-  }
-}
-
-function lerpLook(a, b, t, out) {
-  out.skyTop.copy(a.skyTop).lerp(b.skyTop, t)
-  out.skyBottom.copy(a.skyBottom).lerp(b.skyBottom, t)
-  out.light.copy(a.light).lerp(b.light, t)
-  out.stars = a.stars + (b.stars - a.stars) * t
-  out.moon = a.moon + (b.moon - a.moon) * t
-  out.windows = a.windows + (b.windows - a.windows) * t
-  out.shadow = a.shadow + (b.shadow - a.shadow) * t
-  return out
-}
-
-function cloneLook(l) {
-  return { ...l, skyTop: l.skyTop.clone(), skyBottom: l.skyBottom.clone(), light: l.light.clone() }
-}
 
 /**
  * @param {HTMLCanvasElement} canvas
@@ -101,7 +73,8 @@ export function createTown(canvas, opts) {
     height: 1
   }
 
-  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'low-power' })
+  // HD-2D 的場景先畫進後製目標（post.js 自帶 MSAA），畫布只收全畫面四邊形與村民對話框，畫布本身不需要多重取樣。
+  const renderer = new WebGLRenderer({ canvas, antialias: !opts.hd2d, alpha: false, powerPreference: 'low-power' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, state.lowPower ? 1.5 : 2))
   renderer.outputColorSpace = SRGBColorSpace
   renderer.shadowMap.enabled = !!opts.hd2d && !state.lowPower
@@ -109,7 +82,9 @@ export function createTown(canvas, opts) {
 
   const scene = new Scene()
   const pitch = opts.hd2d ? HD2D_PITCH : LEVEL_PITCH
-  const village = createVillage({ lowPower: state.lowPower, hd2d: !!opts.hd2d, pitch })
+  // 場景外觀：日夜與屬性天氣的過場只在進行中才重新合成並套用（look.js）。
+  const sceneLook = createSceneLook(opts.period)
+  const village = createVillage({ lowPower: state.lowPower, hd2d: !!opts.hd2d, pitch, sceneLook })
   renderer.autoClear = false
   const post = createPostPass({ hd2d: !!opts.hd2d, lowPower: state.lowPower })
   let weatherTime = 0
@@ -227,17 +202,12 @@ export function createTown(canvas, opts) {
   }
 
   // 日夜
-  let lookFrom = lookFromPeriod(opts.period)
-  let lookTo = cloneLook(lookFrom)
   village.villagers?.setPeriod(opts.period.key)
-  const look = cloneLook(lookFrom)
-  let tweenStart = 0
-  let tweening = false
 
-  function applyLook(base) {
-    const env = weather.environment()
-    const l = weather.look(base, env)
-    village.setLook(l, env)
+  // 只在場景外觀有變化時呼叫：這裡與 village.setLook 寫入的屬性不能再有每幀的寫入者，否則靜止時會停在別處寫的值。
+  function applyLook() {
+    const l = sceneLook.look
+    village.setLook(l, sceneLook.environment)
     skyMaterial.uniforms.top.value.copy(l.skyTop)
     skyMaterial.uniforms.bottom.value.copy(l.skyBottom)
     stars.setOpacity(l.stars)
@@ -245,19 +215,11 @@ export function createTown(canvas, opts) {
   }
 
   function setPeriod(period, immediate = false) {
-    lookFrom = cloneLook(look)
-    lookTo = lookFromPeriod(period)
+    const instant = immediate || state.reducedMotion
+    sceneLook.setPeriod(period, { immediate: instant, now: performance.now() })
     village.villagers?.setPeriod(period.key)
-    if (immediate || state.reducedMotion) {
-      lerpLook(lookFrom, lookTo, 1, look)
-      applyLook(look)
-      tweening = false
-      requestFrame()
-      return
-    }
-    tweenStart = performance.now()
-    tweening = true
-    startLoop()
+    if (instant) requestFrame()
+    else startLoop()
   }
 
   // 渲染
@@ -282,12 +244,8 @@ export function createTown(canvas, opts) {
     const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.1) : 0
     lastTime = now
 
-    if (tweening) {
-      const t = clamp((now - tweenStart) / TRANSITION_MS, 0, 1)
-      lerpLook(lookFrom, lookTo, easeInOut(t), look)
-      applyLook(look)
-      if (t >= 1) tweening = false
-    }
+    // 天氣權重須在村莊更新前推進：粒子、閃電與村民對話讀同一幀的權重。
+    const lookChanged = sceneLook.advance(now, dt, state.reducedMotion)
 
     const smoothing = state.reducedMotion ? 1 : 1 - Math.exp(-dt * 7)
     if (!state.parallaxFrozen && !state.reducedMotion) {
@@ -308,9 +266,9 @@ export function createTown(canvas, opts) {
       target.y += 1.5 * openingAmount
       village.camera.lookAt(target)
     }
-    applyLook(look)
+    if (lookChanged) applyLook()
     if (!state.reducedMotion) weatherTime += dt
-    const heatStrength = state.reducedMotion ? 0 : weather.environment().heat * (state.lowPower ? .45 : 1)
+    const heatStrength = state.reducedMotion ? 0 : sceneLook.environment.heat * (state.lowPower ? .45 : 1)
     const postActive = post.active(heatStrength)
     renderer.setRenderTarget(postActive ? post.target : null)
     renderer.clear()
@@ -351,7 +309,7 @@ export function createTown(canvas, opts) {
   window.addEventListener('resize', layout)
   document.addEventListener('visibilitychange', onVisibility)
 
-  applyLook(look)
+  applyLook()
   layout()
   startLoop()
 
@@ -361,7 +319,7 @@ export function createTown(canvas, opts) {
     setTilt,
     /** null 明確恢復原景；卡牌收合不呼叫此方法。 */
     setWeather(key) {
-      weather.set(key)
+      sceneLook.setWeather(key)
       requestFrame()
     },
     get weather() {
@@ -379,10 +337,8 @@ export function createTown(canvas, opts) {
       }
       frameRequested = false
       lastTime = 0
+      // 減少動態時，下一幀的 advance 會把進行中的過場直接推到終點。
       if (reduced) {
-        tweening = false
-        lerpLook(lookFrom, lookTo, 1, look)
-        applyLook(look)
         updateParallaxTargets()
         requestFrame()
       } else startLoop()
@@ -396,7 +352,7 @@ export function createTown(canvas, opts) {
       return !!raf && shouldLoop()
     },
     get look() {
-      return look
+      return sceneLook.look
     },
     get journey() {
       return { progress: journeyProgress, target: journeyTarget,

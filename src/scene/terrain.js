@@ -72,7 +72,8 @@ export const cheekAt = (s, side) => s.at + side * (s.width + CHEEK) / 2
 /** 可行走的地面高度（含階梯斜坡），村民依此上下樓梯。 */
 export function terrainAt(x, z) {
   for (const s of STAIRS) {
-    const [along, across] = s.axis === 'z' ? [z, x] : [x, z]
+    // 村民每幀查詢，不建立暫時陣列。
+    const along = s.axis === 'z' ? z : x, across = s.axis === 'z' ? x : z
     if (Math.abs(across - s.at) > s.width / 2) continue
     const t = (along - s.top) / (s.bottom - s.top)
     if (t >= 0 && t <= 1) return s.high + (s.low - s.high) * t
