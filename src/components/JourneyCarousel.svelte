@@ -4,9 +4,12 @@
   import { fade } from 'svelte/transition'
   import { activeCard } from '../lib/stores/activeCard.js'
   import { journey } from '../stores/journey.svelte.js'
+  import { loadNames, zhCardName } from '../stores/names.svelte.js'
   import { viewport } from '../stores/viewport.svelte.js'
   import JourneyCard from './JourneyCard.svelte'
   let { cards, section } = $props()
+  // 下方卡名與搜尋結果一樣顯示中文名，並保留地區型態與 VMAX、ex 等英文後綴；對照表載入前或查無對照（例如訓練家卡）時顯示英文名
+  loadNames().catch(() => {})
   let root = $state()
   const index = $derived(Math.min(journey.selection(section.id), cards.length - 1))
   let pointer = null
@@ -122,7 +125,7 @@
   </div>
   <nav class="carousel-pager" aria-label="切換卡牌" inert={!!$activeCard}>
     <button aria-label="上一張" disabled={index === 0} onclick={() => go(index - 1)}>←</button>
-    <div aria-live="polite"><strong>{cards[index].name}</strong><span>第 {index + 1} 張 / 共 {cards.length} 張 <i>・</i> 點擊卡牌放大</span></div>
+    <div aria-live="polite"><strong>{zhCardName(cards[index].name) || cards[index].name}</strong><span>第 {index + 1} 張 / 共 {cards.length} 張 <i>・</i> 點擊卡牌放大</span></div>
     <button aria-label="下一張" disabled={index === cards.length - 1} onclick={() => go(index + 1)}>→</button>
   </nav>
 </section>

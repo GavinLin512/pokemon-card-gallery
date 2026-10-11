@@ -70,4 +70,4 @@ npm run dev
 - 背景音樂：[こんとどぅふぇ](https://conte-de-fees.com)（作曲 HiLi-ひぃ-）的「もうあさだよ」「ティンクルハロータウン」「草原の歌」「First Moon」，各曲頁面載明可免費商用、不需署名。
 - Galaxy Holo：[aschefield101](https://www.deviantart.com/aschefield101/art/HoloSheet-2012-313543843)。部分背景：[Vecteezy](https://www.vecteezy.com/free-photos)。
 - 卡牌圖像與資料：展示區沿用原作資料（含 151 系列），來自 [pokemontcg.io](https://pokemontcg.io)；搜尋改用 [TCGdex](https://tcgdex.dev)，畫廊集與部分促銷卡圖片仍取自 pokemontcg.io。
-- 寶可夢中英譯名對照：[神奇寶貝百科「寶可夢列表（在其他語言中）」](https://wiki.52poke.com/zh-hant/寶可夢列表（在其他語言中）)，依 [CC BY-NC-SA 3.0](http://creativecommons.org/licenses/by-nc-sa/3.0/deed.zh-hant) 使用，本專案為非商業用途。Pokémon 相關商標屬任天堂、Creatures、GAME FREAK 所有。
+- 寶可夢中英譯名對照：[神奇寶貝百科「寶可夢列表（在其他語言中）」](https://wiki.52poke.com/zh-hant/寶可夢列表（在其他語言中）)，依 [CC BY-NC-SA 3.0](http://creativecommons.org/licenses/by-nc-sa/3.0/deed.zh-hant) 使用，本專案為非商業用途。訓練家、物品、能量卡的繁中卡名以 [TCGdex](https://tcgdex.dev) 繁中卡牌資料自動配對、逐筆查證後整理（`docs/card-names.csv`），部分道具名另以 [PokeAPI](https://pokeapi.co) 交叉確認，TCGdex 沒有的卡改查[寶可夢集換式卡牌遊戲官方網站](https://asia.pokemon-card.com/tw/)。Pokémon 相關商標屬任天堂、Creatures、GAME FREAK 所有。

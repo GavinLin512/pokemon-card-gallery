@@ -60,9 +60,10 @@ pokemon-card-gallery/
 │   ├── PLAN.md                 本文件
 │   ├── adr/                    決策紀錄
 │   ├── pokemon-language-list.md  神奇寶貝百科譯名頁面原始轉存（來源，不直接讀取）
-│   └── pokemon-names.csv       譯名對照的可編輯版本（§6.3）
+│   ├── pokemon-names.csv       譯名對照的可編輯版本（§6.3）
+│   └── card-names.csv          訓練家、物品、能量卡名對照的可編輯版本（§6.3）
 ├── scripts/
-│   └── build-names.mjs         docs/pokemon-names.csv → src/config/pokemonNames.json
+│   └── build-names.mjs         docs/pokemon-names.csv、card-names.csv → src/config/pokemonNames.json、cardNames.json
 ├── public/
 │   ├── css/  data/  img/  foils.txt  favicon.png    ← 凍結區
 │   ├── audio/                  背景音樂四首 bgm-{dawn,day,dusk,night}.mp3（§9.8）
@@ -75,12 +76,14 @@ pokemon-card-gallery/
 │   ├── config/
 │   │   ├── sections.js         18 個展示區設定（§7）
 │   │   ├── pokemonNames.json   譯名對照（由 scripts/build-names.mjs 產生，勿手改）
+│   │   ├── cardNames.json      訓練家、物品、能量卡名對照（同上產生，勿手改）
 │   │   ├── town.js             場景圖層設定（§8.1）
 │   │   ├── weather.js          屬性天氣對應表（§9.4）
 │   │   ├── dayCycle.js         日夜時段與色票（§9.3）
 │   │   └── bgm.js              背景音樂曲目、音量與淡化時間（§9.8）
 │   ├── stores/
 │   │   ├── search.svelte.js    搜尋狀態與查詢邏輯（中英文判斷、譯名查詢、fetch 重試）
+│   │   ├── names.svelte.js     譯名對照載入與英文卡名反查中文名（搜尋結果、旅程輪播共用）
 │   │   ├── cards.svelte.js     卡牌登錄表、cardId → sectionId、目前放大卡牌（由 gtag select_item 事件取得）
 │   │   ├── pokedex.svelte.js   我的圖鑑（localStorage）
 │   │   ├── dayCycle.svelte.js  目前時段（自動 + 手動覆寫）
@@ -146,8 +149,8 @@ pokemon-card-gallery/
 訪客可直接輸入繁體中文寶可夢名稱。流程：
 
 1. **判斷模式**：輸入含任何 CJK 字元即進入中文模式，否則走 §6.2 的英文流程。中文模式最少 2 字即可查詢（超夢、快龍等兩字名很常見）。
-2. **查譯名對照**：在 `pokemonNames.json` 中比對 `zh` 與 `aliases`（含舊譯、簡體），排序為
-   完全相符 > 前綴相符 > 子字串相符，最多取 **8** 隻。
+2. **查譯名對照**：在 `pokemonNames.json` 與 `cardNames.json`（訓練家、物品、能量卡名）中比對 `zh` 與 `aliases`
+   （含舊譯、簡體），排序為完全相符 > 前綴相符 > 子字串相符，同分時寶可夢依圖鑑編號在前、卡名在後，最多取 **8** 筆。
 3. **組查詢**：每個英文名一個 GraphQL 別名區塊，一次請求送出，結果合併去重。
    2026-09-06 實測：`name: "Pikachu"` 會同時命中 Pikachu V、VMAX、V-UNION 等衍生卡；
    含 `'`、`.`、空白的名稱（Farfetch'd、Mr. Mime）以 JSON 字串跳脫後可正常查詢。
@@ -180,13 +183,46 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
   其左側所有 CJK 字串為中文名，第一個為正式名，其餘為別名。
 - **可編輯版本**：`docs/pokemon-names.csv`（UTF-8 with BOM，Excel 可直接開），欄位
   `no, zh_tw, en, aliases`（別名以 `|` 分隔）。**要修改譯名請改這個檔**，不要改 md 或 json。
-- **建置**：`npm run build:names` 執行 `scripts/build-names.mjs`，讀 CSV 產生
-  `src/config/pokemonNames.json`（精簡格式 `[{n,zh,en,a:[…]}]`，約 66KB，gzip 後約 25KB，
-  以動態 `import()` 在第一次搜尋時才載入；英文搜尋也載入，以便結果標注中文名）。
+- **訓練家、物品、能量卡名**：`docs/card-names.csv`，欄位 `en, zh_tw, aliases, source`，共 313 列（2026-10-11）：
+  151 系列 16 個、劍盾系列（TCGdex `swsh` 集號，含 Pokémon GO 集與特典卡）299 個英文卡名全數收錄。
+  `en` 可用 `|` 列出同一張卡的多個英文名（`Basic Psychic Energy|Psychic Energy`，151 與劍盾的基本能量命名不同）。
+  繁中正式名以 TCGdex 繁中卡牌資料（`zh-tw`）或官方繁中卡牌資料庫查證，`source` 記錄查證依據：
+  繁中卡號（例如瑪俐 `S8b-160`，TCGdex 或官方卡表可查），或 `tw-<編號>`（官方繁中卡牌資料庫
+  `asia.pokemon-card.com/tw/card-search/detail/<編號>/`，例如打空保險 `tw-5583`）。
+  TCGdex 的繁中卡牌用亞洲版卡號，與英文卡號不對應，查證方式：
+  - 旅程的 31 個：以日文名找到卡號、再取同卡號的繁中名，或比對效果文字（阿馴 `SPD-016`「從自己的牌庫抽出3張卡」對應 Barry「Draw 3 cards」）。
+  - 其餘劍盾卡名先自動配對：英文與繁中（非 SV 集號）同繪師、同卡牌類型，再比對效果中 ≥2 的數字（英文的能量符號寫成單字，
+    `ColorlessColorless` 算 2）、約 50 組中英效果關鍵字與規則標記，一對一指派；PokeAPI 道具繁中名作為交叉確認。
+    以旅程 16 個人工查證卡名當答案全數命中；高、中信心 221 筆逐筆人工檢視後收錄。
+  - 低信心與配不到的 77 個逐筆人工確認：繁中資料中不少道具卡的效果欄只有通用規則文字，改以同繪師候選的卡名語意、
+    同卡號日文名（`なごりの大鈴` → 餘音大鈴鐺）或效果文字確認，收錄 66 個。
+  - TCGdex 繁中資料沒有的 11 個（多為特典卡與 SR，TCGdex 與官方資料庫都有漏收）改查官方來源，並比對效果文字：
+    官方繁中卡牌資料庫 8 個（蜜葉、亞玄、機器鶘、辣味香料咖哩、打空保險、挖洞兄弟、拉苯博士、冠軍慶典）；
+    官方卡表 PDF（`asia.pokemon-card.com/tw/archive/card/pdf/S4a.pdf`）卡面 2 個（道館訓練家、茂詩）；
+    索德與西爾迪以零售商實卡照片與神奇寶貝百科「索德與西爾迪（TCG）」頁面確認（038/S-P、S8b 263/184）。
+  旅程的 31 個另有簡體別名，其餘未加。新增卡名時同樣改這個檔再重新建置；整串卡名比對，不套用寶可夢的前後綴規則。
+- **建置**：`npm run build:names` 執行 `scripts/build-names.mjs`，讀兩份 CSV 產生
+  `src/config/pokemonNames.json` 與 `src/config/cardNames.json`（`[{zh,en,e:[其他英文名],a:[…]}]`，約 13KB），兩份一起檢查
+  中文正式名、英文名（含其他英文名）不重複與別名不與其他正式名衝突。`pokemonNames.json` 精簡格式 `[{n,zh,en,a:[…]}]`，約 66KB，gzip 後約 25KB，
+  由 `stores/names.svelte.js` 以動態 `import()` 在第一次需要時才載入：第一次搜尋（英文搜尋也載入，以便結果標注中文名），
+  或旅程輪播出現時（輪播下方卡名顯示中文名，載入前與查無對照時顯示英文名）。
+- **卡名中文顯示規則**（`zhCardName`，旅程輪播用；搜尋結果的 `zhName` 只取中文名，不含前後綴）：
+  比對前把彎引號換成直引號、去掉結尾括號副標（TCGdex 的 `Boss's Orders (Lysandre)` → 老大的指令），先整串比對卡名；
+  比對不到才視為寶可夢卡。地區型態與起源型態翻成中文、直接接在名稱前（Alolan 阿羅拉、Galarian 伽勒爾、Hisuian 洗翠、Paldean 帕底亞、
+  Origin Forme 起源型態）；Radiant、Single Strike、Rapid Strike、Shiny、Dark、Light、Team Rocket's、Detective 去掉不顯示；
+  V、VMAX、VSTAR、V-UNION、GX、EX、ex、BREAK、LV.X、δ、Prime、LEGEND 保留英文並以一個空白隔開；♀、♂ 同後綴處理，
+  中文名依對照表正式譯名（尼多蘭 ♀、尼多朗 ♂）。例：Alolan Vulpix VSTAR → 阿羅拉六尾 VSTAR。
 - **驗證結果（2026-09-06）**：1025 隻全數解析，加上編號 0000「寶可夢」共 1026 筆，
   962 個別名，中文正式名無重複，別名不與其他寶可夢正式名衝突。
-- **已知限制**：對照表只有寶可夢本體名稱，訓練家卡（例如「瑪俐」）、地區型態（「伽勒爾 大蔥鴨」）
-  與招式名不在範圍內；地區型態輸入「大蔥鴨」仍會命中 Galarian Farfetch'd。
+- **已知限制**：寶可夢對照只有本體名稱，地區型態（「伽勒爾 大蔥鴨」）與招式名不在範圍內；地區型態輸入「大蔥鴨」
+  仍會命中 Galarian Farfetch'd。對照表以外的卡名（例如之後新增的系列）維持英文名。
+  TCGdex 名稱條件為子字串比對：中文搜尋命中卡名時，結果改以整個單字比對英文卡名（丹帝 Leon 不會帶出 Charmeleon、Empoleon），
+  寶可夢名維持子字串比對；「瑪俐」仍會帶出 Marnie's Pride 這類以該字開頭的卡。
+  中文模式最多取 8 筆譯名，「手套」「能量」這類廣泛的字會命中超過 8 個卡名（手套有 10 種、能量有 37 個），超出的不會查詢；
+  結果區會顯示「符合的譯名有 N 個，只查詢了前 8 個」提示（`search.nameOverflow`）。
+  上限的取捨（2026-10-11 實測，每個英文名 × 每組卡種條件各是一個子查詢）：不選卡種時 8 個名稱約 3.0 秒、12 個約 3.2 秒、
+  16 個約 4.5 秒、24 個約 6.0 秒；選「閃卡」（4 組條件）時 8 個約 6.8 秒、12 個約 9.8 秒（最慢 10.7 秒，超過單次 10 秒逾時）、
+  16 個約 11.3 秒，24 個（96 個子查詢）被 TCGdex 直接拒絕。
 
 ## 7. 展示區設定檔 `src/config/sections.js`
 
@@ -547,7 +583,7 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 | 斷點 | 沿用原作：< 900px 為手機／平板排版 |
 | 觸控目標 | 所有按鈕至少 44×44px |
 | TopBar | 站名縮成圖示，搜尋框點擊展開全寬 |
-| 卡牌格 | 桌機沿用原作三欄格；手機改為一次一張、左右滑動的輪播（原作三張扇形疊放在觸碰時 z-index 交錯）。以 transform 位移而非原生捲動，放大檢視時外框改為不裁切；支援手勢、左右按鈕、方向鍵，顯示「第 n 張 / 共 m 張」 |
+| 卡牌格 | 桌機沿用原作三欄格；手機改為一次一張、左右滑動的輪播（原作三張扇形疊放在觸碰時 z-index 交錯）。以 transform 位移而非原生捲動，放大檢視時外框改為不裁切；支援手勢、左右按鈕、方向鍵，顯示中文卡名（規則見 §6.3「卡名中文顯示規則」，例如「太陽伊布 VMAX」；查無對照時為英文）與「第 n 張 / 共 m 張」 |
 | 捕捉按鈕 | 固定底部中央，避開卡牌區 |
 | 圖鑑 | 底部抽屜 |
 | 對話框 | 全寬，頭像縮小放左上 |
@@ -560,6 +596,11 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 - 場景 render loop 只在需要時跑（可見、非 reduced-motion）。
 - three.js 以 `manualChunks` 拆成獨立 chunk。
 - 圖層貼圖用 `TextureLoader`，`generateMipmaps` 關閉，`minFilter: LinearFilter`。
+- HD-2D 畫布不開抗鋸齒：場景先畫進後製目標（桌機 4× MSAA），畫布只收全畫面四邊形與村民對話框，畫布本身的多重取樣用不到。現行畫風不經後製，維持開啟。
+- 場景外觀（`scene/look.js`）持有日夜過場與屬性天氣權重，只在過場進行中或剛切換時重新合成並套用材質；靜止時 `advance` 回報沒有變化，不配置物件。天氣權重在村莊更新前推進，粒子、閃電與村民讀同一幀的權重。套用外觀時寫入的屬性（霧、日光、環境光、天空、星月、雲色、看板最低亮度等）不得再有每幀的寫入者；雲的閃電發光由 `setFlash` 每幀寫入，但與 `setLook` 用同一公式與同一光量，結果相同。
+- 開場下降的 `wheel`、`touchmove`、`keydown` 攔截只在開場期間掛上，開場結束即卸下，之後的觸控捲動不必等主執行緒。減少動態模式下，捲動停下 200ms 才以 `replaceState` 記錄位置（Safari 限制每 30 秒 100 次）。
+- 已評估不處理：凍結區 `Card.svelte` 每次掛載都在 `document` 留下一個 `visibilitychange` 監聽，換卡後舊實例無法回收。實測每換一張卡約 28KB，卡牌大圖不被留住，切換分頁時的 `reset()` 不跑動畫；要修只能改成手動掛載凍結區卡牌，風險高於效益。
+- 效能量測（2026-10-11，M1 無頭 Chrome，HD-2D，停在第 3 站）：GPU 行程記憶體桌機 1440×900@2x 由約 660MB 降為 500MB、手機 390×844@3x 由約 210MB 降為 170MB；JS 配置量桌機由約 5.9MB/秒降為 1.8MB/秒、手機由 5.4MB/秒降為 1.3MB/秒。固定亂數種子與減少動態後，HD-2D 19 張（四時段、三站、手機、卡牌放大）與舊畫風 11 張場景截圖都與改動前逐像素相同；過場中間幀另以舊新程式逐幀比對 12 萬幀，數值完全一致。
 
 ## 12. 里程碑與 commit
 
@@ -596,11 +637,6 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 
 凍結區、Vite base、語言、授權、日夜與屬性天氣規則等其餘約束繼續適用。§12 的舊版里程碑保留為歷史紀錄；新版以 P1 三站原型、P2 完整旅程與開場、P3 遊戲介面與工具、P4 完整驗收追蹤。完成各階段後再更新 README 實作狀態。
 
-- HD-2D 畫布不開抗鋸齒：場景先畫進後製目標（桌機 4× MSAA），畫布只收全畫面四邊形與村民對話框，畫布本身的多重取樣用不到。現行畫風不經後製，維持開啟。
-- 場景外觀（`scene/look.js`）持有日夜過場與屬性天氣權重，只在過場進行中或剛切換時重新合成並套用材質；靜止時 `advance` 回報沒有變化，不配置物件。天氣權重在村莊更新前推進，粒子、閃電與村民讀同一幀的權重。套用外觀時寫入的屬性（霧、日光、環境光、天空、星月、雲色、看板最低亮度等）不得再有每幀的寫入者；雲的閃電發光由 `setFlash` 每幀寫入，但與 `setLook` 用同一公式與同一光量，結果相同。
-- 開場下降的 `wheel`、`touchmove`、`keydown` 攔截只在開場期間掛上，開場結束即卸下，之後的觸控捲動不必等主執行緒。減少動態模式下，捲動停下 200ms 才以 `replaceState` 記錄位置（Safari 限制每 30 秒 100 次）。
-- 已評估不處理：凍結區 `Card.svelte` 每次掛載都在 `document` 留下一個 `visibilitychange` 監聽，換卡後舊實例無法回收。實測每換一張卡約 28KB，卡牌大圖不被留住，切換分頁時的 `reset()` 不跑動畫；要修只能改成手動掛載凍結區卡牌，風險高於效益。
-- 效能量測（2026-10-11，M1 無頭 Chrome，HD-2D，停在第 3 站）：GPU 行程記憶體桌機 1440×900@2x 由約 660MB 降為 500MB、手機 390×844@3x 由約 210MB 降為 170MB；JS 配置量桌機由約 5.9MB/秒降為 1.8MB/秒、手機由 5.4MB/秒降為 1.3MB/秒。固定亂數種子與減少動態後，HD-2D 19 張（四時段、三站、手機、卡牌放大）與舊畫風 11 張場景截圖都與改動前逐像素相同；過場中間幀另以舊新程式逐幀比對 12 萬幀，數值完全一致。
 ## 15. 151 系列整合（2026-09-09）
 
 原作者另有 [pokemon-cards-151](https://github.com/simeydotme/pokemon-cards-151)（GPL-3.0）專案，以不同的 CSS 與元件實作朱紫「151」系列的閃卡效果。本節以最小改動把它併入旅程，作為第 19 站；搜尋暫不納入（見 §15.5）。

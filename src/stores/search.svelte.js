@@ -4,6 +4,7 @@
 import { cards as cardRegistry } from './cards.svelte.js'
 import { GRAPHQL_URL, SERIES_SET_FILTER, buildQuery, parseResponse, foilType } from '../config/tcgdex.js'
 import { journey } from './journey.svelte.js'
+import { loadNames, zhName } from './names.svelte.js'
 import altArts from '../lib/components/alternate-arts.json'
 import promos from '../lib/components/promos.json'
 
@@ -23,23 +24,19 @@ const RETRY_MS = [1000, 2000, 4000]
 const REQUEST_TIMEOUT_MS = 10000 // 單次請求逾時，避免伺服器不回應時無限等待
 const ID_BATCH = 20 // 逐張 card(id) 查詢每批張數：TCGdex 每張約 150ms，84 張一次送會超過逾時，分批並行
 
-// 英文卡名去掉前後綴後再反查中文名
-const EN_PREFIX = /^(Radiant|Galarian|Alolan|Hisuian|Paldean|Shiny|Dark|Light|Team Rocket's|Detective)\s+/i
-const EN_SUFFIX = /\s+(V|VMAX|VSTAR|V-UNION|GX|EX|ex|BREAK|LV\.X|δ|Prime|LEGEND)$/
-
 let query = $state('')
 /** idle | loading | done | empty | no-name | error */
 let status = $state('idle')
 let results = $state([])
-/** 中文模式命中的譯名 [{ n, zh, en }] */
+/** 中文模式命中的譯名 [{ n, zh, en, e }]（e 為卡名的其他英文名） */
 let matched = $state([])
+/** 中文模式符合的譯名總數；超過 MAX_NAMES 時只查詢前 MAX_NAMES 筆，結果區會提示 */
+let matchedTotal = $state(0)
 /** 點選的閃卡類型 id（config/tcgdex.js FOIL_TYPES），null 為不限 */
 let foil = $state(null)
 
 let timer
 let seq = 0
-let names = null
-let enIndex = null
 
 function isChinese(q) {
   return CJK.test(q)
@@ -50,18 +47,12 @@ function isUsable(q) {
   return t.length >= (isChinese(t) ? MIN_ZH : MIN_EN)
 }
 
-async function loadNames() {
-  if (names) return names
-  const mod = await import('../config/pokemonNames.json')
-  names = mod.default
-  enIndex = new Map(names.map((r) => [r.en.toLowerCase(), r.zh]))
-  return names
-}
+const CARD_NAME_ORDER = 10000 // 訓練家等卡名沒有圖鑑編號，同分時排在寶可夢之後
 
-/** 依 zh 與 aliases 比對：完全相符 > 前綴 > 子字串，最多 MAX_NAMES 隻。 */
-function lookupNames(q) {
+/** 依 zh 與 aliases 比對（寶可夢與訓練家、物品、能量卡名），排序為完全相符 > 前綴 > 子字串，回傳全部符合者；查詢時只取前 MAX_NAMES 筆。 */
+function lookupNames(rows, q) {
   const scored = []
-  for (const row of names) {
+  for (const row of rows) {
     const candidates = [row.zh, ...(row.a ?? [])]
     let best = 0
     for (const c of candidates) {
@@ -69,19 +60,14 @@ function lookupNames(q) {
       else if (c.startsWith(q)) best = Math.max(best, 2)
       else if (c.includes(q)) best = Math.max(best, 1)
     }
-    if (best) scored.push({ score: best, n: row.n, zh: row.zh, en: row.en })
+    if (best) scored.push({ score: best, n: row.n ?? CARD_NAME_ORDER, zh: row.zh, en: row.en, e: row.e, card: row.n === undefined })
   }
   scored.sort((a, b) => b.score - a.score || a.n - b.n)
-  return scored.slice(0, MAX_NAMES).map(({ n, zh, en }) => ({ n, zh, en }))
+  return scored.map(({ n, zh, en, e, card }) => ({ n, zh, en, e, card }))
 }
 
-/** 英文卡名反查中文名，找不到回傳空字串。 */
-function zhName(en) {
-  if (!enIndex || !en) return ''
-  let base = en.trim()
-  for (let i = 0; i < 3; i++) base = base.replace(EN_PREFIX, '').replace(EN_SUFFIX, '')
-  return enIndex.get(base.toLowerCase()) ?? ''
-}
+/** 卡名以整個單字比對（TCGdex 的名稱條件是子字串比對，Leon 會帶出 Charmeleon、Empoleon 等寶可夢） */
+const wordPattern = (name) => new RegExp(`(^|[^a-z0-9])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`)
 
 async function fetchWithRetry(query) {
   const init = {
@@ -121,13 +107,18 @@ async function run() {
   const type = foilType(foil)
   /** 送給 TCGdex 的英文名稱清單（子字串比對，不分大小寫）；只點閃卡類型時為空 */
   let names = []
+  /** 中文模式命中訓練家等卡名時的結果過濾：寶可夢名維持子字串比對，卡名改為整個單字比對 */
+  let nameFilter = null
 
   if (!isUsable(q)) {
     matched = []
+    matchedTotal = 0
   } else if (isChinese(q)) {
-    await loadNames()
+    const rows = await loadNames()
     if (mySeq !== seq) return
-    const hits = lookupNames(q)
+    const all = lookupNames(rows, q)
+    const hits = all.slice(0, MAX_NAMES)
+    matchedTotal = all.length
     if (!hits.length) {
       matched = []
       results = []
@@ -135,9 +126,18 @@ async function run() {
       return
     }
     matched = hits
-    names = hits.map((h) => h.en)
+    names = hits.flatMap((h) => [h.en, ...(h.e ?? [])])
+    if (hits.some((h) => h.card)) {
+      const pokemon = hits.filter((h) => !h.card).map((h) => h.en.toLowerCase())
+      const cards = hits.filter((h) => h.card).flatMap((h) => [h.en, ...(h.e ?? [])]).map(wordPattern)
+      nameFilter = (c) => {
+        const n = c.name.toLowerCase().replace(/[‘’]/g, "'")
+        return pokemon.some((k) => n.includes(k)) || cards.some((re) => re.test(n))
+      }
+    }
   } else {
     matched = []
+    matchedTotal = 0
     names = [q]
   }
 
@@ -158,6 +158,7 @@ async function run() {
     if (mySeq !== seq) return
     let found = parseResponse(data)
     if (type) found = found.filter((c) => type.test(c, FOIL_CTX))
+    if (nameFilter) found = found.filter(nameFilter)
     // 逐張查詢的類型沒有送名稱條件，在前端以名稱子字串過濾
     if (ids && names.length) {
       const keys = names.map((n) => n.toLowerCase())
@@ -191,6 +192,7 @@ function schedule(immediate = false) {
     status = 'idle'
     results = []
     matched = []
+    matchedTotal = 0
     return
   }
   status = 'loading'
@@ -214,6 +216,10 @@ export const search = {
   },
   get matched() {
     return matched
+  },
+  /** 中文模式符合的譯名超過上限時為 { total, limit }，否則為 null */
+  get nameOverflow() {
+    return matchedTotal > MAX_NAMES ? { total: matchedTotal, limit: MAX_NAMES } : null
   },
   get foil() {
     return foil
