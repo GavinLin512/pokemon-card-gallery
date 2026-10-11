@@ -1,5 +1,5 @@
 import { Group, BufferGeometry, Float32BufferAttribute, ShaderMaterial, Points, Color,
-  AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, MeshBasicMaterial, PointLight } from 'three'
+  AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, MeshBasicMaterial, PointLight, Vector3 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { particleVertex, particleFragment, effectFragmentEnd } from './weather-shaders.js'
 
@@ -7,7 +7,7 @@ import { particleVertex, particleFragment, effectFragmentEnd } from './weather-s
  * 世界座標天氣；與地景共用深度，所有資源集中建立、淡入淡出及釋放。
  * state 為場景外觀（look.js）的唯讀天氣權重與目前天氣，過場由場景外觀推進。
  */
-export function createWeather(scene, { state, lowPower = false, trees = [], surfaces = [], flowers = [], clouds, ground = null } = {}) {
+export function createWeather(scene, { state, lowPower = false, trees = [], surfaces = [], flowers = [], glints = [], clouds, ground = null } = {}) {
   const group = new Group(); group.name = 'type-weather'; scene.add(group)
   const effects = [], resources = []
   let time = 0, nextLightning = .4 + Math.random()*.6, flash = 0
@@ -33,10 +33,13 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     effects.push({key,weightKey,mesh,material,color:new Color(color),strength,staticEffect})
     resources.push(mesh.geometry,material)
   }
-  function particles(key, weightKey, mode, count, color, size, {additive=false,strength=1,staticEffect=false}={}) {
-    count=Math.round(count*(lowPower?.42:1))
+  /** anchors：固定位置的粒子（鋼的反光點），直接使用給定的世界座標，手機隔一取一。 */
+  function particles(key, weightKey, mode, count, color, size, {additive=false,strength=1,staticEffect=false,anchors=null}={}) {
+    if (anchors) anchors=anchors.filter((_,i)=>!lowPower||i%2===0)
+    count=anchors ? anchors.length : Math.round(count*(lowPower?.42:1))
     const positions=[], seeds=[]
     for (let i=0; i<count; i++) {
+      if (anchors) { const {x,y,z}=anchors[i]; positions.push(x,y,z); seeds.push(Math.random(),Math.random(),Math.random(),y); continue }
       let x=(Math.random()-.5)*48, z=24-Math.random()*213, y=.35
       if ((mode===0||key==='leaf-glow')&&trees.length) {
         const tree=trees[i%trees.length]; x=tree.x*.78+(Math.random()-.5)*4;z=tree.z+(Math.random()-.5)*4;y=.6
@@ -78,15 +81,17 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   particles('psychic-fog','orbs',4,260,'#9b6cca',11,{strength:.36,staticEffect:true})
   particles('mist','mist',4,330,'#283145',13,{strength:.55,staticEffect:true})
   particles('dark-shadows','mist',11,500,'#101626',.65,{strength:.8})
-  particles('shards','shards',8,1000,'#e7efff',.65,{additive:true})
+  // 2026-10-12：鋼的落下碎片改為屋頂與圍欄上的反光星芒（PLAN §9.4）。
+  particles('steel-glints','shards',15,0,'#dfeaff',1.5,{additive:true,anchors:glints})
   particles('petals','petals',6,1800,'#ffc1d5',.7)
   particles('flower-glow','petals',5,700,'#ffd0e4',.3,{additive:true})
-  particles('dragon-scales','rays',13,750,'#ffd065',.5)
-  particles('feathers','feathers',7,1100,'#ffffff',.85)
+  // 2026-10-12：羽毛改為像素羽毛，數量與尺寸都比舊版小；龍的金色鱗光由天空的龍星群取代（sky-weather.js）。
+  particles('feathers','feathers',7,800,'#ffffff',.7)
 
   const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;
     void main(){vUv=uv;vPhase=phase;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
-  function planes(key,weightKey,placements,fragment,color,{additive=true,strength=1,staticEffect=false}={}) {
+  /** header：放在 main 之前的著色器函式。 */
+  function planes(key,weightKey,placements,fragment,color,{additive=true,strength=1,staticEffect=false,header=''}={}) {
     const parts=placements.map(([x,y,z,w,h,vertical,angle=0],i) => {
       const g=new PlaneGeometry(w,h)
       if (!vertical) g.rotateX(-Math.PI/2)
@@ -96,7 +101,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     })
     const geometry=mergeGeometries(parts);parts.forEach(g=>g.dispose())
     const material=new ShaderMaterial({vertexShader:planeVertex,
-      fragmentShader:`uniform float time,opacity;uniform vec3 color;varying vec2 vUv;varying float vPhase,vDistance;
+      fragmentShader:`uniform float time,opacity;uniform vec3 color;varying vec2 vUv;varying float vPhase,vDistance;${header}
       void main(){vec3 tint=color;float alpha=0.;${fragment}${effectFragmentEnd}}`,
       uniforms:{time:{value:0},opacity:{value:0},color:{value:new Color(color)}},
       transparent:true,depthWrite:false,depthTest:true,side:DoubleSide,blending:additive?AdditiveBlending:NormalBlending})
@@ -137,12 +142,33 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     alpha=body*smoothstep(0.,.12,y)*(1.-smoothstep(.65,1.,y));
     tint=mix(vec3(1.,.12,.015),color,pow(body,3.)*(1.-y));
   `,'#ffd784',{strength:.85})
-  planes('rays','rays',Array.from({length:18},(_,i)=>[Math.sin(i*2.7)*12,14,6-i*12,8,28,true]),`
-    float center=.5+vUv.y*.12;float width=mix(.46,.08,vUv.y);
-    float core=exp(-pow((vUv.x-center)/width,2.));
-    float streak=.7+.3*sin(vUv.x*65.+vPhase*20.);
-    alpha=core*streak*sin(vUv.y*3.14159)*(.72+.28*sin(time*.35+vPhase))*.34;
-  `,'#ffd073',{additive:false,strength:1.5})
+  // 無色的動畫風線：面向鏡頭的直立平面（寬高 4:1）上，一段細白線沿起伏的路徑往東滑過，接近尾端時捲一圈後消失。
+  const gusts=Array.from({length:lowPower?18:40},()=>{
+    const x=(Math.random()-.5)*28, z=20-Math.random()*210
+    return [x,floorAt(x,z)+1.8+Math.random()*2.6,z,8,2,true,(Math.random()-.5)*.5]
+  })
+  planes('wind-lines','feathers',gusts,`
+    vec2 q=vUv*vec2(4.,1.);
+    float head=fract(time*.3+vPhase)*1.7-.15, tail=head-.4;
+    if(q.x>windPath(max(tail,0.),vPhase).x-.3&&q.x<windPath(clamp(head,0.,1.),vPhase).x+.3){
+      float best=1e3,along=0.;
+      for(int i=0;i<20;i++){
+        float s0=tail+float(i)*.02, s1=s0+.02;
+        if(s1<0.||s0>1.) continue;
+        s0=max(s0,0.);s1=min(s1,1.);
+        vec2 a=windPath(s0,vPhase), ab=windPath(s1,vPhase)-a;
+        float h=clamp(dot(q-a,ab)/max(dot(ab,ab),1e-6),0.,1.), d=length(q-a-ab*h);
+        if(d<best){best=d;along=mix(s0,s1,h);}
+      }
+      float k=clamp((along-tail)/.4,0.,1.), width=.035*sin(k*3.14159)+.006;
+      alpha=(1.-smoothstep(width*.55,width,best))*.85*smoothstep(0.,.06,along)*(1.-smoothstep(.94,1.,along));
+    }
+  `,'#ffffff',{additive:false,strength:.8,header:`
+    vec2 windPath(float s,float seed){
+      float curl=clamp((s-.72)/.28,0.,1.)*6.2832;
+      return vec2(.15+min(s,.72)*3.6+max(s-.72,0.)*1.2,.35+.1*sin(s*5.+seed*6.2832))+vec2(sin(curl),1.-cos(curl))*.22;
+    }
+  `})
 
   const boltGeometry=new BufferGeometry()
   boltGeometry.setAttribute('position',new Float32BufferAttribute([],3))
@@ -175,6 +201,27 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     boltGeometry.setAttribute('position',new Float32BufferAttribute(points,3));boltGeometry.computeBoundingSphere()
     lightningLight.position.set(x,Math.min(12,y-4),z);flash=.62
   }
+  // 龍：約每 10 秒飛過一次（3.6 秒），只有地面的龍影。每一輪隨機挑鏡頭前方可見地面上的一個經過點與任意飛行方向，
+  // 位置與走向每次都不同；左右範圍依畫面寬高比縮放，直向手機也落在畫面內。angle 為 0 時往 -z（畫面深處）飛。
+  const DRAGON_CYCLE=10, DRAGON_PASS=3.6, DRAGON_REACH=25
+  const dragon={x:0,z:0,angle:0,shadow:0}
+  let dragonClock=0, dragonPath=null
+  const facing=new Vector3()
+  function flyDragon(step,camera,weight) {
+    dragonClock+=step
+    if (dragonClock>=DRAGON_CYCLE||!dragonPath) {
+      dragonClock%=DRAGON_CYCLE
+      camera.getWorldDirection(facing)
+      const length=Math.hypot(facing.x,facing.z)||1, fx=facing.x/length, fz=facing.z/length
+      const ahead=10+Math.random()*16, side=(Math.random()*2-1)*ahead*Math.tan(camera.fov*Math.PI/360)*camera.aspect*.6
+      dragonPath={x:camera.position.x+fx*ahead-fz*side, z:camera.position.z+fz*ahead+fx*side}
+      dragon.angle=Math.random()*Math.PI*2
+    }
+    const age=dragonClock, along=(age/DRAGON_PASS*2-1)*DRAGON_REACH
+    dragon.x=dragonPath.x+Math.sin(dragon.angle)*along
+    dragon.z=dragonPath.z-Math.cos(dragon.angle)*along
+    dragon.shadow=age<DRAGON_PASS ? weight*Math.min(1,age/.5,(DRAGON_PASS-age)/.5) : 0
+  }
   return {
     group,
     resize(w,h){for(const e of effects) if(e.material.uniforms.viewport) e.material.uniforms.viewport.value=h},
@@ -195,7 +242,11 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
       bolt.visible=pulse>.02;boltMaterial.opacity=Math.min(1,pulse*1.3)*weights.sparks
       lightningLight.intensity=pulse*210*weights.sparks
       clouds?.setFlash(pulse*weights.sparks)
+      if(reduced||weights.rays<.01) {dragonClock=0;dragonPath=null;dragon.shadow=0}
+      else flyDragon(step,camera,weights.rays)
     },
+    /** 龍影的世界位置 (x, z)、飛行方向 angle 與深淺 shadow（0 為不顯示）。 */
+    get dragon(){return dragon},
     setLook(look){for(const e of effects)e.material.uniforms.color.value.copy(e.color).multiplyScalar(1-look.windows*.58)},
     get activeKey(){return state.key},
     get count(){return effects.reduce((n,e)=>n+(e.mesh.isPoints?e.mesh.geometry.attributes.position.count:0),0)},

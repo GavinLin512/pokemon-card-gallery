@@ -85,7 +85,7 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
 
 test('enhanced weather stays in world space through travel and clears after interrupted transitions',()=>{
  const {look,v,step}=villageWithLook({lowPower:true});v.resize(390,844)
- const names=['leaf-glow','flames','rain-splash','rain-drops','puddles','psychic-rings','aura-dust','dark-shadows','fairy-rings','dragon-scales']
+ const names=['leaf-glow','flames','rain-splash','rain-drops','puddles','psychic-rings','aura-dust','dark-shadows','fairy-rings','steel-glints','wind-lines']
  const originals=new Map(names.map(name=>[name,v.scene.getObjectByName(name).geometry.attributes.position.array.slice()]))
  for(const key of Object.values(weatherByType)) {
   look.setWeather(key)
@@ -104,6 +104,40 @@ test('enhanced weather stays in world space through travel and clears after inte
  assert.equal(puddles.material.uniforms.time.value,0);assert.equal(fog.material.uniforms.time.value,0)
  step(5100,false,.5,.1)
  assert.equal(v.scene.getObjectByName('rain-splash').visible,true)
+ v.dispose()
+})
+
+test('dragon shadow crosses the visible ground at a different spot and heading each pass, and reduced mode stops it',()=>{
+ const {look,v,step}=villageWithLook();v.resize(1440,900);look.setWeather('rays')
+ const passes=[];let current=null
+ for(let i=0;i<320;i++){
+  step(i*100,false,.1,.1)
+  const d=v.weather.dragon,cam=v.camera.position
+  assert.ok([d.x,d.z,d.angle,d.shadow].every(Number.isFinite))
+  if(d.shadow>0){
+   if(!current){current={angle:d.angle,points:[]};passes.push(current)}
+   current.points.push({x:d.x-cam.x,z:d.z-cam.z,shadow:d.shadow})
+  } else current=null
+ }
+ assert.ok(passes.length>=3,`passes: ${passes.length}`)
+ for(const pass of passes.slice(0,3)){
+  // 經過的中點（隨機挑出的經過點）落在鏡頭前方 10–26 單位、左右不超出畫面的地面上。
+  const mid=pass.points[Math.floor(pass.points.length/2)]
+  assert.ok(-mid.z>8&&-mid.z<28&&Math.abs(mid.x)<20,`crossing at ${mid.x.toFixed(1)},${mid.z.toFixed(1)}`)
+ }
+ const spots=passes.slice(0,3).map(p=>p.points[Math.floor(p.points.length/2)])
+ assert.ok(new Set(passes.slice(0,3).map(p=>p.angle.toFixed(3))).size===3,'heading changes each pass')
+ assert.ok(Math.hypot(spots[0].x-spots[1].x,spots[0].z-spots[1].z)>.01&&Math.hypot(spots[1].x-spots[2].x,spots[1].z-spots[2].z)>.01,'crossing point changes each pass')
+ step(40000,true,.1,0)
+ assert.equal(v.weather.dragon.shadow,0)
+ v.dispose()
+})
+
+test('steel glints sit on roofs and fence posts instead of the open ground',()=>{
+ const v=createVillage({lowPower:false})
+ const pos=v.scene.getObjectByName('steel-glints').geometry.attributes.position
+ assert.ok(pos.count>100)
+ for(let i=0;i<pos.count;i++) assert.ok(pos.getY(i)>.9,`glint at y=${pos.getY(i)}`)
  v.dispose()
 })
 

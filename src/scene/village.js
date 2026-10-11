@@ -48,7 +48,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
   }
   // 多面岩石原始幾何沒有索引，補齊後可與其他同色模型合併。
   geometry.rock.setIndex(Array.from({ length: geometry.rock.attributes.position.count }, (_, i) => i))
-  const trees = [], flowers = [], surfaces = []
+  const trees = [], flowers = [], surfaces = [], glints = []
   const weatherUniforms = createSurfaceWeather()
   const patterns = hd2d ? createPixelPatterns() : null
   const vegetation = new Set(['#3b7850','#73ad64','#88ba6d','#a0cb7f','#3f8c5a','#85bc6f','#b4d497','#8cc58e','#357953','#43865b'])
@@ -287,6 +287,22 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     // 屋頂及建築包圍盒作降雨落點；雨不會在屋內继续落下。
     if (object.geometry === geometry.box && object.scale.x > 2 && object.scale.z > 1 && object.position.y > 2.7) {
       surfaces.push(bounds.clone())
+      // 鋼的反光星芒沿平屋頂的四邊排列；斜屋頂的包圍盒角落懸空，改由下方的屋脊與屋簷取點。
+      if (!object.rotation.x && !object.rotation.z) {
+        const { min, max } = bounds
+        for (let x = min.x; x <= max.x + .01; x += (max.x - min.x) / Math.max(1, Math.round((max.x - min.x) / 1.5))) {
+          glints.push({ x, y: max.y + .12, z: min.z }, { x, y: max.y + .12, z: max.z })
+        }
+        for (let z = min.z + 1.5; z < max.z - .75; z += 1.5) glints.push({ x: min.x, y: max.y + .12, z }, { x: max.x, y: max.y + .12, z })
+      }
+    }
+    // 屋脊、屋簷與圍欄柱頂也會反光。
+    const color = colorOf.get(object.material)
+    if (object.geometry === geometry.box && color === '#ae4b49' && object.scale.x > 6) {
+      for (let t = .08; t < 1; t += .17) glints.push({ x: bounds.min.x + (bounds.max.x - bounds.min.x) * t, y: bounds.max.y + .1, z: (bounds.min.z + bounds.max.z) / 2 })
+    }
+    if (object.geometry === geometry.crown && color === '#dbe1d4') {
+      glints.push({ x: (bounds.min.x + bounds.max.x) / 2, y: bounds.max.y + .05, z: (bounds.min.z + bounds.max.z) / 2 })
     }
     const transformed = object.geometry.clone().applyMatrix4(object.matrixWorld)
     if (lift) transformed.translate(0, lift, 0)
@@ -308,7 +324,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     root.add(mesh)
   })
   // HD-2D：天氣的落點與近地效果依含階梯的地形高度抬到台地上。
-  const weather = createWeather(scene, { state: sceneLook.weather, lowPower, trees, flowers, surfaces, clouds, ground: hd2d ? terrainAt : null })
+  const weather = createWeather(scene, { state: sceneLook.weather, lowPower, trees, flowers, surfaces, glints, clouds, ground: hd2d ? terrainAt : null })
   // 樹看板投下真實的樹形影子（billboards.js）；草叢與村民只接收陰影。
   const treeBillboards = hd2d && treeSprites.length ? createBillboards({
     canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
@@ -369,9 +385,11 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
     weatherUniforms.wind.value = reduced ? 0 : hd2d ? Math.max(BREEZE, env.wind) : env.wind
     weatherUniforms.motion.value = reduced ? 0 : 1
-    for (const key of ['aura','leaves','embers','orbs','shards','petals','rays','rain']) {
+    for (const key of ['aura','leaves','embers','orbs','shards','petals','rain','feathers']) {
       weatherUniforms[key].value = key === 'aura' && reduced ? 0 : sceneLook.weather.weights[key]
     }
+    const { dragon } = weather
+    weatherUniforms.dragon.value.set(dragon.x, dragon.z, dragon.angle, dragon.shadow)
   }
   function setLook(look, env = sceneLook.environment) {
     weatherUniforms.night.value = look.windows
@@ -381,8 +399,9 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     scene.fog.far = 130 - env.fog * 65
     for (const [color, mat] of materials) {
       if (vegetation.has(color)) continue
-      mat.roughness = Math.max(.15, .85 - env.wet * .64 - env.metal * .48)
-      mat.metalness = Math.min(.72, env.metal * .68 + env.wet * .14)
+      // 場景沒有環境貼圖，金屬度高會把漫射光吃掉、整片變暗；鋼只略提金屬度，光澤靠低粗糙度、星芒與反光帶。
+      mat.roughness = Math.max(.15, .85 - env.wet * .64 - env.metal * .45)
+      mat.metalness = Math.min(.72, env.metal * .1 + env.wet * .14)
     }
     scene.fog.color.copy(look.skyBottom)
     sun.color.copy(look.light)

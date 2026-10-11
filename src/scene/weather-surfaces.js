@@ -1,8 +1,13 @@
+import { Vector4 } from 'three'
 import { weatherFields } from './weather-shaders.js'
 
+/** dragon：龍影的世界位置 (x, z)、飛行方向與影子深淺，由 weather.js 每幀算出。 */
 export function createSurfaceWeather() {
-  return Object.fromEntries(['time','wind','aura','leaves','embers','orbs','shards','petals','rays','rain','night','motion']
-    .map(key => [key, { value: key === 'motion' ? 1 : 0 }]))
+  return {
+    ...Object.fromEntries(['time','wind','aura','leaves','embers','orbs','shards','petals','rain','feathers','night','motion']
+      .map(key => [key, { value: key === 'motion' ? 1 : 0 }])),
+    dragon: { value: new Vector4() }
+  }
 }
 
 /**
@@ -16,7 +21,7 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
   material.onBeforeCompile = shader => {
     beforeCompile.call(material, shader)
     for (const [key, uniform] of Object.entries(uniforms)) shader.uniforms[`wx_${key}`] = uniform
-    const declarations = Object.keys(uniforms).map(key => `uniform float wx_${key};`).join('\n')
+    const declarations = Object.entries(uniforms).map(([key, u]) => `uniform ${u.value.isVector4 ? 'vec4' : 'float'} wx_${key};`).join('\n')
     const varyings = 'varying vec3 wxPosition, wxNormal;\n'
     const base = vegetation && breeze ? 'attribute float swayBase;\n' : ''
     shader.vertexShader = declarations + varyings + base + weatherFields + shader.vertexShader
@@ -52,21 +57,39 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
       diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.72,.82,.92),frost*.45);
       diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.91,1.16,.88),wx_leaves*.42);
       diffuseColor.rgb*=1.-wx_rain*.18;
+      // 無色的雲影與龍飛過的影子；減少動態時兩者都停用，不會凍結在地上。
+      // 近處可見地面約 30 單位見方，龍影縮成翼展約 15，整個形狀才看得出是龍。
+      // 以 uniform 分支略過沒用到的天氣，所有片段走同一路徑，晴天不多算雜訊與龍形。
+      float shade=0.;
+      if(wx_feathers>.001) shade=weatherCloudShade(wxPosition.xz,wx_time)*wx_feathers*.35;
+      if(wx_dragon.w>.001) {
+        // 轉到龍的座標：+y 為飛行方向（angle 為 0 時往 -z），拍翅隨時間。
+        vec2 offset=wxPosition.xz-wx_dragon.xy, ahead=vec2(sin(wx_dragon.z),-cos(wx_dragon.z));
+        vec2 q=vec2(dot(offset,vec2(-ahead.y,ahead.x)),dot(offset,ahead))*1.5;
+        shade=max(shade,dragonShape(q,wx_time*4.2)*wx_dragon.w*.7);
+      }
+      diffuseColor.rgb*=1.-shade*wx_motion*(1.-wx_night*.6);
     `)
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
       #include <emissivemap_fragment>
       float nightFade=1.-wx_night*.78;
       float lowGlow=exp(-max(0.,wxPosition.y)*.26);
-      float beam=weatherBeam(wxPosition.xz,wx_time);
       float pulse=weatherPulse(wxPosition.xz,wx_time);
       vec3 glow=vec3(.38,.045,.68)*wx_orbs*lowGlow*.22;
       glow+=vec3(.85,.26,.44)*wx_petals*lowGlow*.12;
-      glow+=vec3(1.,.48,.08)*wx_rays*beam*(.18+.3*up);
       glow+=vec3(1.,.22,.025)*wx_embers*lowGlow*.12;
       glow+=vec3(.55,.72,.9)*wx_shards*up*grain*.025;
       glow+=vec3(1.,.18,.02)*wx_aura*pulse*lowGlow*.24;
-      totalEmissiveRadiance+=glow*nightFade;
+      // 鋼：銀色反光帶每 6 秒由左往右斜斜掃過地面、屋頂與牆面一次（前 2.4 秒），位置相對鏡頭，每一站都看得到。
+      if(wx_shards>.001) {
+        float sweepPhase=fract(wx_time/6.);
+        float sweep=dot(wxPosition.xz-cameraPosition.xz,vec2(.91,.41))-mix(-70.,70.,sweepPhase/.4);
+        float sheen=exp(-sweep*sweep*1.4)+.5*exp(-(sweep+1.7)*(sweep+1.7)*6.);
+        glow+=vec3(.82,.9,1.)*wx_shards*wx_motion*sheen*step(sweepPhase,.4)*(.3+.5*up)*${vegetation ? '.4' : '1.'};
+      }
+      // 雲影與龍影也遮住天氣的染光，影子不會被天氣染光照亮回去。
+      totalEmissiveRadiance+=glow*nightFade*(1.-shade*wx_motion);
     `)
   }
-  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v2-${vegetation}-${water}-${breeze}`
+  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v3-${vegetation}-${water}-${breeze}`
 }

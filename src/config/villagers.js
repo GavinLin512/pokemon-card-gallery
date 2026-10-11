@@ -53,10 +53,13 @@ export const chatLines = [
   { when: 'any', weather: 'orbs', lines: ['紫色的霧…', '感覺怪怪的。'] },
   { when: 'any', weather: 'aura', lines: ['風好大！', '帽子要飛走了！'] },
   { when: 'any', weather: 'mist', lines: ['天色好暗。', '走路小心點。'] },
-  { when: 'any', weather: 'shards', lines: ['地上結霜了。', '好冷，快回家。'] },
+  { when: 'any', weather: 'shards', lines: ['屋頂一閃一閃的。', '像鋼鐵一樣亮！'] },
+  { when: 'any', weather: 'shards', lines: ['剛剛有道銀光！', '從地上掃過去了。'] },
   { when: 'any', weather: 'petals', lines: ['花瓣飄下來了！', '好像在作夢。'] },
-  { when: 'any', weather: 'rays', lines: ['雲裡有金光！', '那是什麼呀？'] },
-  { when: 'any', weather: 'feathers', lines: ['有羽毛飄過。', '哪來的羽毛？'] }
+  { when: 'any', weather: 'rays', lines: ['剛剛有龍飛過！', '影子好大啊！'] },
+  { when: 'any', weather: 'rays', lines: ['你看，流星！', '是龍星群嗎？'] },
+  { when: 'any', weather: 'feathers', lines: ['有羽毛飄過。', '哪來的羽毛？'] },
+  { when: 'any', weather: 'feathers', lines: ['風好舒服。', '雲影跑得好快。'] }
 ]
 
 /** 這組對話在目前時段與天氣（null 為原景）下能不能說。 */

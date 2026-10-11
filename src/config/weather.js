@@ -22,8 +22,8 @@ export const weatherEffects = {
   orbs: { sky: '#a486ce', tint: .48, cloud: '#b2a1ce', cover: 1.15, thickness: 1.4, light: .85, fog: .6 },
   aura: { sky: '#e9b284', tint: .32, cloud: '#efd3ad', cover: 1, thickness: 1.15, light: 1.05, fog: .1, wind: .35 },
   mist: { sky: '#384556', tint: .94, cloud: '#354353', cover: 2.65, thickness: 4, light: .4, fog: .8, wind: .6 },
-  shards: { sky: '#c0cddd', tint: .8, cloud: '#d4dce7', cover: 1.35, thickness: 1.5, light: 1.08, fog: .15, metal: 1, wind: .4 },
+  shards: { sky: '#b4c9e4', tint: .55, cloud: '#eef3fa', cover: 1.15, thickness: 1.3, light: 1.18, fog: .08, metal: 1, wind: .4 },
   petals: { sky: '#f3aec8', tint: .72, cloud: '#ffdadb', cover: 1, thickness: 1.35, light: 1.05, fog: .12, wind: .65 },
-  rays: { sky: '#acb9d0', tint: .45, cloud: '#d7caa7', cover: 1.9, thickness: 3.2, light: 1.05, fog: .2, wind: .85 },
+  rays: { sky: '#6d5f9c', tint: .62, cloud: '#a99cc4', cover: 1.9, thickness: 3.2, light: .9, fog: .22, wind: .85 },
   feathers: { sky: '#83c9f5', tint: .32, cloud: '#ffffff', cover: 1.25, thickness: 2.2, light: 1.1, fog: 0, wind: .8 }
 }

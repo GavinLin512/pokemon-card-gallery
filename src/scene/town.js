@@ -19,6 +19,7 @@ import {
 import { MOON, STARS, PARALLAX_PX, HORIZON } from '../config/town.js'
 import { createPostPass } from './post.js'
 import { createStars } from './stars.js'
+import { createSkyWeather } from './sky-weather.js'
 import { createSceneLook } from './look.js'
 import { createVillage } from './village.js'
 import { sampleFlight, LEVEL_PITCH, HD2D_PITCH } from './journey.js'
@@ -114,6 +115,9 @@ export function createTown(canvas, opts) {
   scene.add(stars.points)
 
   const weather = village.weather
+  // 龍屬性的流星（sky-weather.js），在背景層，村莊的雲與遠景會蓋在前面。
+  const skyWeather = createSkyWeather({ lowPower: state.lowPower })
+  scene.add(skyWeather.mesh)
 
   // 月亮
   const moonTexture = new CanvasTexture(drawMoon(MOON.size))
@@ -157,6 +161,7 @@ export function createTown(canvas, opts) {
 
     // 星星只在實際地平線以上
     stars.layout(w, h, skyMaterial.uniforms.horizon.value, renderer.getPixelRatio())
+    skyWeather.layout(w, h, skyMaterial.uniforms.horizon.value)
 
     updateParallaxTargets()
     requestFrame()
@@ -267,6 +272,7 @@ export function createTown(canvas, opts) {
       village.camera.lookAt(target)
     }
     if (lookChanged) applyLook()
+    skyWeather.update(weatherTime, state.reducedMotion ? 0 : sceneLook.weather.weights.rays)
     if (!state.reducedMotion) weatherTime += dt
     const heatStrength = state.reducedMotion ? 0 : sceneLook.environment.heat * (state.lowPower ? .45 : 1)
     const postActive = post.active(heatStrength)
@@ -388,6 +394,7 @@ export function createTown(canvas, opts) {
       village.dispose()
       post.dispose()
       stars.dispose()
+      skyWeather.dispose()
       skyMaterial.dispose()
       unitPlane.dispose()
       renderer.dispose()
