@@ -1,5 +1,7 @@
 <script>
   import { dayCycle } from '../stores/dayCycle.svelte.js'
+  import { bgm } from '../stores/bgm.svelte.js'
+  import { CREDIT, TITLE_FADE_MS } from '../config/bgm.js'
   import { pokedex } from '../stores/pokedex.svelte.js'
   import { journey } from '../stores/journey.svelte.js'
   import { locationAt } from '../config/journeyStops.js'
@@ -7,6 +9,16 @@
   let { openPanel, navigate } = $props()
   const needsTilt = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && navigator.maxTouchPoints > 0
   let tilt = $state('ask')
+  // 換曲時跑馬燈文字先淡出，換成新曲名再淡入；連續換曲時只保留最後一首。
+  let shownTitle = $state(bgm.title)
+  let titleHidden = $state(false)
+  $effect(() => {
+    const next = bgm.title
+    if (next === shownTitle) return
+    titleHidden = true
+    const timer = setTimeout(() => { shownTitle = next; titleHidden = false }, TITLE_FADE_MS)
+    return () => clearTimeout(timer)
+  })
   async function requestTilt() {
     try {
       tilt = await DeviceOrientationEvent.requestPermission()
@@ -14,7 +26,13 @@
     } catch { tilt = 'denied' }
   }
 </script>
-<header class="journey-hud" inert={!!journey.panel || journey.expanded} class:concealed={journey.expanded}>
+{#if bgm.playing}
+  <!-- 曲名跑馬燈：8 份相同內容並排，整條向左位移一份的寬度後無縫接續；曲名已在音樂按鈕的標籤裡，讀屏不重複唸。 -->
+  <div class="now-playing" class:concealed={journey.expanded} aria-hidden="true">
+    <div class="ticker" class:hidden={titleHidden}>{#each Array(8) as _, i (i)}<span>♪ 正在播放：{shownTitle}　{CREDIT}</span>{/each}</div>
+  </div>
+{/if}
+<header class="journey-hud" class:with-ticker={bgm.playing} inert={!!journey.panel || journey.expanded} class:concealed={journey.expanded}>
   <button class="location-badge" onclick={() => navigate(null)} aria-label="回到旅程起點">
     <span class="pokeball-symbol" aria-hidden="true"></span>
     <span><small>寶可夢卡牌展示館 · {journey.seriesInfo.full}</small><strong>{locationAt(journey.current.progress)}</strong></span>
@@ -39,6 +57,17 @@
       </svg>
       <b>{dayCycle.isAuto ? '自動' : dayCycle.label}</b>
     </button>
+    <button onclick={() => bgm.toggle()} aria-pressed={bgm.enabled} disabled={bgm.failed} aria-label={bgm.failed ? '背景音樂無法播放' : bgm.enabled ? `關閉背景音樂，正在播放${bgm.title}` : '開啟背景音樂'}>
+      <svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 5 6 9H2v6h4l5 4V5z" />
+        {#if bgm.enabled}
+          <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" />
+        {:else}
+          <path d="m16 9 6 6m0-6-6 6" />
+        {/if}
+      </svg>
+      <b>{bgm.failed ? '無法播放' : bgm.enabled ? '音樂' : '靜音'}</b>
+    </button>
     {#if needsTilt && tilt !== 'granted'}<button aria-label="開啟傾斜感應" disabled={tilt === 'denied'} onclick={requestTilt}><span aria-hidden="true">↔</span><b>{tilt === 'denied' ? '已停用' : '傾斜'}</b></button>{/if}
   </nav>
 </header>
@@ -49,7 +78,15 @@
   <div class="route-progress" style:width={`${journey.current.position / journey.timeline.length * 100}%`}></div>
 </footer>
 <style>
-  .journey-hud { position: fixed; z-index: 35; inset: max(24px, env(safe-area-inset-top)) 28px auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; pointer-events: none; }
+  .journey-hud { position: fixed; z-index: 35; top: calc(max(24px, env(safe-area-inset-top)) + var(--ticker-h, 0px)); left: 28px; right: 28px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; pointer-events: none; transition: top .3s ease-out; }
+  .with-ticker { --ticker-h: 26px; }
+  /* 底色與文字色由 app.css 的 --band-* 依時段提供，隨場景光照 1.2 秒漸變。 */
+  .now-playing { position: fixed; z-index: 36; top: env(safe-area-inset-top, 0px); left: 0; right: 0; height: 22px; overflow: hidden; background: linear-gradient(90deg, var(--band-a), var(--band-b)); color: var(--band-ink); font: 12px/22px var(--font-display); letter-spacing: .08em; pointer-events: none; animation: drop-in .3s ease-out; transition: --band-a 1.2s, --band-b 1.2s, color 1.2s; }
+  .ticker { display: flex; width: max-content; animation: ticker 14s linear infinite; transition: opacity .6s; }
+  .ticker.hidden { opacity: 0; }
+  .ticker span { padding: 0 2.5em; white-space: nowrap; }
+  @keyframes ticker { to { transform: translateX(-12.5%); } }
+  @keyframes drop-in { from { transform: translateY(-100%); } }
   button { pointer-events: auto; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); color: var(--ink); box-shadow: 0 4px 0 #263d3bd9; }
   .location-badge { display: flex; gap: 13px; align-items: center; padding: 10px 18px; text-align: left; }
   .location-badge small { display: block; font-size: 11px; letter-spacing: .1em; color: var(--ink-soft); }
@@ -57,7 +94,7 @@
   .hud-tools { display: flex; gap: 8px; }
   .hud-tools button { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 13px; }
   .hud-tools span { font-size: 25px; line-height: 1; } b { font: 15px var(--font-display); }
-  .day-cycle-icon { width: 24px; height: 24px; flex-shrink: 0; }
+  .day-cycle-icon, .hud-icon { width: 24px; height: 24px; flex-shrink: 0; }
   em { font-size: 12px; background: var(--red); color: white; border-radius: 5px; padding: 0 6px; font-style: normal; }
   .journey-bar { position: fixed; z-index: 35; left: 28px; right: 28px; bottom: max(20px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 20px; padding: 13px 16px; background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; color: var(--ink); box-shadow: 0 4px 0 #263d3b; overflow: hidden; }
   .stop-indicator { display: flex; gap: 15px; align-items: center; flex: 1; }
@@ -71,7 +108,8 @@
   .route-progress { position: absolute; height: 3px; background: var(--red); bottom: 0; left: 0; }
   .concealed { visibility: hidden; }
   @media(max-width:899px) {
-    .journey-hud { inset: max(12px, env(safe-area-inset-top)) 12px auto; gap: 6px; }
+    .journey-hud { top: calc(max(12px, env(safe-area-inset-top)) + var(--ticker-h, 0px)); left: 12px; right: 12px; gap: 6px; }
+    .with-ticker { --ticker-h: 18px; }
     .location-badge { padding: 6px 9px; gap: 8px; }
     .location-badge small { display: none; } .location-badge strong { font-size: 18px; } .location-badge :global(.pokeball-symbol) { width: 24px; height: 24px; }
     .hud-tools { gap: 5px; } .hud-tools button { height: 44px; padding: 0 9px; gap: 5px; } .hud-tools b { display: none; }
@@ -80,5 +118,11 @@
     .stop-indicator strong { font-size: 14px; } .map-button { font-size: 13px; padding: 0 10px; flex-shrink: 0; }
     .scroll-hint { display: none; }
   }
-  @media(max-height:600px) { .journey-hud { top: 10px; } .journey-bar { bottom: 8px; padding: 6px 12px; } .scroll-hint { display: none; } }
+  @media(max-height:600px) { .journey-hud { top: calc(10px + var(--ticker-h, 0px)); } .journey-bar { bottom: 8px; padding: 6px 12px; } .scroll-hint { display: none; } }
+  @media(prefers-reduced-motion:reduce) {
+    .journey-hud { transition: none; }
+    .now-playing { animation: none; }
+    .ticker { animation: none; width: 100%; justify-content: center; }
+    .ticker span + span { display: none; }
+  }
 </style>

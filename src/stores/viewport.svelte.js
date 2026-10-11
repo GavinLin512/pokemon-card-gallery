@@ -31,6 +31,15 @@ function parseCardTest() {
 }
 const cardTest = parseCardTest()
 
+/** 場景畫風原型旗標：?look=hd2d 啟用斜俯視、移軸景深與像素紋理；其他值維持現行畫風。 */
+const look = (() => {
+  try {
+    return new URLSearchParams(location.search).get('look') === 'hd2d' ? 'hd2d' : 'classic'
+  } catch {
+    return 'classic'
+  }
+})()
+
 /**
  * Android 上的 Blink 引擎（Chrome、Edge、Samsung Internet、WebView）會把帶濾鏡／混合模式的閃卡層
  * 從 3D 情境壓平，凍結區 shine、glare 各層只差 0.2px 到 0.4px 的 translateZ，壓平後排序不穩而閃爍。
@@ -74,6 +83,10 @@ export const viewport = {
   /** ?cardtest= 旗標集合，空集合代表未啟用 */
   get cardTest() {
     return cardTest
+  },
+  /** 場景畫風：'hd2d' 原型或 'classic' 現行 */
+  get look() {
+    return look
   },
   /** Android Blink：正面閃卡層改為平面以避免放大時閃爍 */
   get flatFoil() {

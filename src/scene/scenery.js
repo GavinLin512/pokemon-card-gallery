@@ -1,4 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute } from 'three'
+import { PATTERN_WORLD, TONE_RANGE } from './pixel-art.js'
 
 /** 封閉三角屋頂，x 為屋脊方向，底面 y=0、屋脊 y=1。 */
 export function createGableGeometry() {
@@ -47,4 +48,31 @@ export function createBladeGeometry() {
   geometry.computeVertexNormals()
   geometry.setAttribute('uv', new Float32BufferAttribute([.5,0,0,.5,.5,1,1,.5],2))
   return geometry
+}
+
+/**
+ * HD-2D 原型的像素貼圖：接在 addLandscapeWeather 之後，沿用其世界座標與法線。
+ * 依表面朝向選投影平面，以世界座標取樣 pixel-art.js 的圖樣（每單位 16 格）：R 乘上明暗，G 混入點綴色。
+ * 斜屋頂依坡向翻轉，魚鱗瓦的弧邊一律朝下坡；牆腳接地處壓暗，近似環境光遮蔽。
+ * 不需要 UV，合併後的幾何也能對齊；遠處由 mipmap 平均，不增加繪製次數。
+ */
+export function addPixelTexture(material, { texture, accent }) {
+  const beforeCompile = material.onBeforeCompile
+  const baseKey = material.customProgramCacheKey()
+  material.onBeforeCompile = shader => {
+    beforeCompile.call(material, shader)
+    shader.uniforms.pxPattern = { value: texture }
+    shader.uniforms.pxAccent = { value: accent }
+    shader.fragmentShader = 'uniform sampler2D pxPattern;\nuniform vec3 pxAccent;\n' + shader.fragmentShader.replace('#include <color_fragment>', `
+      #include <color_fragment>
+      vec3 pxNormal = abs(wxNormal);
+      bool pxTop = pxNormal.y > .6;
+      float pxDownhill = wxNormal.z < -.02 ? -1. : 1.;
+      vec2 pxPlane = pxTop ? vec2(wxPosition.x, -wxPosition.z * pxDownhill) : (pxNormal.x > pxNormal.z ? wxPosition.zy : wxPosition.xy);
+      vec4 pxSample = texture2D(pxPattern, pxPlane / ${PATTERN_WORLD}.);
+      diffuseColor.rgb = mix(diffuseColor.rgb, pxAccent, pxSample.g) * pxSample.r * ${TONE_RANGE};
+      if (!pxTop) diffuseColor.rgb *= mix(.66, 1., smoothstep(.05, 1., wxPosition.y));
+    `)
+  }
+  material.customProgramCacheKey = () => `${baseKey}-pixel-v3`
 }

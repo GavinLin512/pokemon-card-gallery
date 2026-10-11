@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Color } from 'three'
+import { Color, Scene } from 'three'
 import { weatherKeyFor, weatherByType } from '../src/config/weather.js'
 import { createWeatherState, weatherLook } from '../src/scene/weather-state.js'
 import { createVillage } from '../src/scene/village.js'
+import { createWeather } from '../src/scene/weather.js'
+import { terrainAt, groundAt } from '../src/scene/terrain.js'
 import { periods } from '../src/config/dayCycle.js'
 
 test('first type, unknown and absent types resolve explicitly',()=>{
@@ -76,7 +78,7 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
 
 test('enhanced weather stays in world space through travel and clears after interrupted transitions',()=>{
  const v=createVillage({lowPower:true});v.resize(390,844)
- const names=['leaf-glow','flames','rain-splash','puddles','psychic-rings','aura-dust','dark-shadows','fairy-rings','dragon-scales']
+ const names=['leaf-glow','flames','rain-splash','rain-drops','puddles','psychic-rings','aura-dust','dark-shadows','fairy-rings','dragon-scales']
  const originals=new Map(names.map(name=>[name,v.scene.getObjectByName(name).geometry.attributes.position.array.slice()]))
  for(const key of Object.values(weatherByType)) {
   v.weather.set(key)
@@ -106,9 +108,43 @@ test('new ground effects avoid buildings and rain splashes share roof stopping h
   // 容許火舌邊緣延伸，中心不得生成在真新鎮民宅內。
   assert.ok(!(Math.abs(x+7)<2&&Math.abs(z+8)<1.2))
  }
- const rain=v.scene.getObjectByName('rain-splash').geometry
- let roofs=0
- for(let i=0;i<rain.attributes.seed.count;i++) if(rain.attributes.seed.getW(i)>3) roofs++
- assert.ok(roofs>0,'roof rain must produce splashes at the roof, not at ground level')
+ // 彈起的水珠沿用雨滴的屋頂停止高度；貼地漣漪只在戶外地面，不出現在屋頂。
+ for(const [name,onRoofs] of [['rain-drops',true],['rain-splash',false]]) {
+  const rain=v.scene.getObjectByName(name).geometry
+  let roofs=0
+  for(let i=0;i<rain.attributes.seed.count;i++) if(rain.attributes.seed.getW(i)>=1) roofs++
+  assert.equal(roofs>0,onRoofs,`${name} on roofs`)
+ }
+ // 雨量較暴雨版減 20%，手機仍依 lowPower 減量。
+ assert.equal(v.scene.getObjectByName('rain').geometry.attributes.position.count,Math.round(11600*.42))
  v.dispose()
+})
+
+test('with HD-2D terrain the ground weather sits on each terrace instead of under it',()=>{
+ // HD-2D 村莊需要 canvas，這裡直接把地形函式交給天氣；第一層台地高 .8，避開階梯與高地並留出平面半徑的邊距。
+ const w=createWeather(new Scene(),{lowPower:true,ground:terrainAt})
+ const onTerrace=(x,z)=>z<-38&&z>-58&&x<8&&x>-20
+ for(const name of ['rain','rain-splash','rain-drops']){
+  const g=w.group.getObjectByName(name).geometry,pos=g.attributes.position,seed=g.attributes.seed
+  let checked=0
+  for(let i=0;i<pos.count;i++){
+   const x=pos.getX(i),z=pos.getZ(i);if(!onTerrace(x,z))continue
+   assert.ok(Math.abs(seed.getW(i)-(groundAt(x,z)+.05))<1e-6,`${name} stops at ${seed.getW(i)} over ${x.toFixed(1)},${z.toFixed(1)}`);checked++
+  }
+  assert.ok(checked>0,name)
+ }
+ for(const name of ['puddles','flames','embers','aura-dust','mist']){
+  const pos=w.group.getObjectByName(name).geometry.attributes.position
+  let checked=0
+  for(let i=0;i<pos.count;i++){
+   const x=pos.getX(i),z=pos.getZ(i);if(!onTerrace(x,z))continue
+   assert.ok(pos.getY(i)>=groundAt(x,z)-1e-6,`${name} vertex y=${pos.getY(i)} under ${x.toFixed(1)},${z.toFixed(1)}`);checked++
+  }
+  assert.ok(checked>0,name)
+ }
+ // 現行畫風維持平地：漣漪一律停在 .05。
+ const flat=createWeather(new Scene(),{lowPower:true})
+ const s=flat.group.getObjectByName('rain-splash').geometry.attributes.seed
+ for(let i=0;i<s.count;i++) assert.ok(Math.abs(s.getW(i)-.05)<1e-6)
+ w.dispose();flat.dispose()
 })

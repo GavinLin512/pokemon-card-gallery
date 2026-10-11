@@ -12,7 +12,6 @@ export const periods = [
     sky: ['#f7b98f', '#bfe0f7'],
     light: '#fff0dc',
     intensity: 0.85,
-    haze: 0.3,
     stars: 0,
     moon: 0,
     windows: 0
@@ -25,7 +24,6 @@ export const periods = [
     sky: ['#79c2ff', '#d9f0ff'],
     light: '#ffffff',
     intensity: 1,
-    haze: 0,
     stars: 0,
     moon: 0,
     windows: 0
@@ -38,7 +36,6 @@ export const periods = [
     sky: ['#f2704b', '#6b3f8f'],
     light: '#e8a070',
     intensity: 0.8,
-    haze: 0,
     stars: 0.25,
     moon: 0,
     windows: 0.6
@@ -51,7 +48,6 @@ export const periods = [
     sky: ['#0d1b3d', '#050912'],
     light: '#9fb4ff',
     intensity: 0.45,
-    haze: 0,
     stars: 1,
     moon: 1,
     windows: 1

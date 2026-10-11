@@ -5,8 +5,12 @@ export function createSurfaceWeather() {
     .map(key => [key, { value: key === 'motion' ? 1 : 0 }]))
 }
 
-/** 擴充既有地面細紋；所有地景材質共用權重，無新增繪製或每幀重新編譯。 */
-export function addLandscapeWeather(material, uniforms, { vegetation = false, water = false } = {}) {
+/**
+ * 擴充既有地面細紋；所有地景材質共用權重，無新增繪製或每幀重新編譯。
+ * breeze（HD-2D）：植物改用與看板相同的微風擺動，並以 swayBase 屬性（植物所在地面高度）計算離地高度，
+ * 抬上台地的植物底部不會跟著滑動。
+ */
+export function addLandscapeWeather(material, uniforms, { vegetation = false, water = false, breeze = false } = {}) {
   const beforeCompile = material.onBeforeCompile
   const baseKey = material.customProgramCacheKey()
   material.onBeforeCompile = shader => {
@@ -14,10 +18,18 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
     for (const [key, uniform] of Object.entries(uniforms)) shader.uniforms[`wx_${key}`] = uniform
     const declarations = Object.keys(uniforms).map(key => `uniform float wx_${key};`).join('\n')
     const varyings = 'varying vec3 wxPosition, wxNormal;\n'
-    shader.vertexShader = declarations + varyings + weatherFields + shader.vertexShader
+    const base = vegetation && breeze ? 'attribute float swayBase;\n' : ''
+    shader.vertexShader = declarations + varyings + base + weatherFields + shader.vertexShader
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
       #include <begin_vertex>
-      ${vegetation ? `
+      ${vegetation && breeze ? `
+      float leverage=min(2.6,max(0.,position.y-swayBase));
+      float sway=breezeSway(position.xz,wx_time,sin(position.x*.37)*cos(position.z*.41)*.3,2.2);
+      float pulse=weatherPulse(position.xz,wx_time)*wx_aura;
+      transformed.x+=(sway*wx_wind*.26+pulse*.5)*leverage;
+      transformed.z-=sway*wx_wind*.08*leverage;
+      transformed.y-=pulse*min(.5,leverage*.45);
+      ` : vegetation ? `
       float sway=sin(wx_time*1.6-position.z*.48+position.x*.25);
       float swell=.65+.35*sin(wx_time*.8-position.z*.2);
       float pulse=weatherPulse(position.xz,wx_time)*wx_aura;
@@ -56,5 +68,5 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
       totalEmissiveRadiance+=glow*nightFade;
     `)
   }
-  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v2-${vegetation}-${water}`
+  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v2-${vegetation}-${water}-${breeze}`
 }

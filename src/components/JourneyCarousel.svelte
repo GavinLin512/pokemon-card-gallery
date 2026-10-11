@@ -1,16 +1,62 @@
 <script>
   import { tick } from 'svelte'
+  import { cubicOut } from 'svelte/easing'
   import { activeCard } from '../lib/stores/activeCard.js'
   import { journey } from '../stores/journey.svelte.js'
+  import { viewport } from '../stores/viewport.svelte.js'
   import JourneyCard from './JourneyCard.svelte'
   let { cards, section } = $props()
   let root = $state()
   const index = $derived(Math.min(journey.selection(section.id), cards.length - 1))
   let pointer = null
   let suppressUntil = 0
+
+  // 景深陳列（HD-2D 原型，?look=hd2d）：卡牌以底邊中央站在路面上。slot 是與目前卡牌的距離，
+  // 正值沿道路往右上方遠處排列、越遠越小越模糊；-1 是剛看過的卡，換卡時往左下淡出，不留在畫面上（也因此點不到）。
+  // 每格為 [x%, y%, 縮放, 模糊 px, 不透明度]，位移以卡牌本身寬高為單位。-2 與 5 是畫面外的進出位置。
+  const depth = viewport.look === 'hd2d'
+  const DEPTH = {
+    wide: { '-2': [-170, 40, 1.15, 8, 0], '-1': [-122, 18, 1, 6, 0], 0: [0, 0, 1, 0, 1], 1: [66, -9, .64, 1.2, .96], 2: [108, -20, .47, 2, .9], 3: [138, -29, .36, 2.8, .82], 4: [162, -36, .28, 3.4, .72], 5: [182, -42, .22, 4, 0] },
+    // 窄螢幕：不放前景卡，預覽疊在主卡右上後方。
+    narrow: { '-2': [-60, 20, 1.1, 6, 0], '-1': [-40, 12, 1.05, 5, 0], 0: [0, 0, 1, 0, 1], 1: [24, -6, .88, .8, .95], 2: [42, -11, .76, 1.5, .85], 3: [56, -15, .66, 2.2, .7], 4: [66, -18, .58, 2.8, 0], 5: [74, -21, .5, 3, 0] }
+  }
+  const shortQuery = matchMedia('(max-height: 600px)')
+  let short = $state(shortQuery.matches)
+  $effect(() => {
+    const update = event => (short = event.matches)
+    shortQuery.addEventListener('change', update)
+    return () => shortQuery.removeEventListener('change', update)
+  })
+  const narrow = $derived(viewport.isMobile || short)
+  /** 最近一次換卡的距離；新主卡從原本那一格放大進場。 */
+  let shift = $state(0)
+
+  function depthOf(slot) {
+    const [x, y, scale, blur, opacity] = DEPTH[narrow ? 'narrow' : 'wide'][Math.max(-2, Math.min(5, slot))]
+    return { x, y, scale, blur, opacity }
+  }
+  function depthStyle(g, filter = true) {
+    return `transform: translate(${g.x}%, ${g.y}%) scale(${g.scale}); opacity: ${g.opacity};${filter ? ` filter: blur(${g.blur}px) saturate(${1 - g.blur * .04});` : ''}`
+  }
+  /** 主卡進場：從原本的預覽位置移到中央。預覽卡本身常駐，換卡時只靠 CSS transition 換位置。 */
+  function travel(node, { from, to, filter = true }) {
+    if (!depth || viewport.reducedMotion || from === to) return { duration: 0 }
+    const a = depthOf(from), b = depthOf(to)
+    const mix = key => t => a[key] + (b[key] - a[key]) * t
+    const [x, y, scale, blur, opacity] = ['x', 'y', 'scale', 'blur', 'opacity'].map(mix)
+    return { duration: 420, easing: cubicOut, css: t => depthStyle({ x: x(t), y: y(t), scale: scale(t), blur: blur(t), opacity: opacity(t) }, filter) }
+  }
+  $effect(() => {
+    if (!depth) return
+    // 預先載入前後兩張大圖，遞補成主卡時不會空白。
+    for (const card of [cards[index + 1], cards[index - 1]]) if (card) new Image().src = card.images.large
+  })
+
   async function go(next) {
     if ($activeCard) return
-    journey.select(section.id, Math.max(0, Math.min(cards.length - 1, next)))
+    const target = Math.max(0, Math.min(cards.length - 1, next))
+    shift = target - index
+    journey.select(section.id, target)
     await tick()
     root?.querySelector('.main-card .card__rotator')?.focus({ preventScroll: true })
   }
@@ -41,16 +87,31 @@
   }
 </script>
 <svelte:window onkeydown={key} />
-<section class="focus-carousel" class:expanded={!!$activeCard} aria-label={`${section.name}卡牌`} aria-roledescription="輪播" bind:this={root}>
+<section class="focus-carousel" class:expanded={!!$activeCard} class:depth aria-label={`${section.name}卡牌`} aria-roledescription="輪播" bind:this={root}>
   <div class="card-stage" role="group" ondragstart={event => event.preventDefault()} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => pointer = null} onclickcapture={e => { if (performance.now() < suppressUntil) { e.preventDefault(); e.stopPropagation() } }}>
-    {#if index > 0}
-      <button class="preview previous" aria-label={`選擇上一張 ${cards[index - 1].name}`} onclick={() => go(index - 1)} disabled={!!$activeCard}><img src={cards[index - 1].images.small ?? cards[index - 1].images.large} alt="" /></button>
-    {/if}
-    <div class="main-card">
-      {#key cards[index].id}<JourneyCard card={cards[index]} {section} />{/key}
-    </div>
-    {#if index < cards.length - 1}
-      <button class="preview next" aria-label={`選擇下一張 ${cards[index + 1].name}`} onclick={() => go(index + 1)} disabled={!!$activeCard}><img src={cards[index + 1].images.small ?? cards[index + 1].images.large} alt="" /></button>
+    {#if depth}
+      <!-- 每張卡常駐一個預覽，不掛載也不卸載；目前這張的預覽疊在主卡正下方，換卡時直接接手退場。 -->
+      {#each cards as card, i (card.id)}
+        {@const slot = i - index}
+        {@const place = depthOf(slot)}
+        {@const shown = slot !== 0 && place.opacity > 0}
+        <button class="preview" class:hidden={!shown} class:current={slot === 0} style={`${depthStyle(place)} z-index: ${10 - Math.abs(slot)};`}
+          aria-label={`選擇第 ${i + 1} 張 ${card.name}`} aria-hidden={!shown}
+          tabindex={shown && Math.abs(slot) === 1 ? 0 : -1} onclick={() => go(i)} disabled={!!$activeCard}><img src={card.images.small ?? card.images.large} alt="" /></button>
+      {/each}
+      {#key cards[index].id}
+        <div class="main-card" in:travel={{ from: shift, to: 0, filter: false }}><JourneyCard card={cards[index]} {section} /></div>
+      {/key}
+    {:else}
+      {#if index > 0}
+        <button class="preview previous" aria-label={`選擇上一張 ${cards[index - 1].name}`} onclick={() => go(index - 1)} disabled={!!$activeCard}><img src={cards[index - 1].images.small ?? cards[index - 1].images.large} alt="" /></button>
+      {/if}
+      <div class="main-card">
+        {#key cards[index].id}<JourneyCard card={cards[index]} {section} />{/key}
+      </div>
+      {#if index < cards.length - 1}
+        <button class="preview next" aria-label={`選擇下一張 ${cards[index + 1].name}`} onclick={() => go(index + 1)} disabled={!!$activeCard}><img src={cards[index + 1].images.small ?? cards[index + 1].images.large} alt="" /></button>
+      {/if}
     {/if}
   </div>
   <nav class="carousel-pager" aria-label="切換卡牌" inert={!!$activeCard}>
@@ -76,6 +137,22 @@
   i { font-style: normal; }
   .expanded .card-stage { animation: none; }
   .expanded .preview, .expanded .carousel-pager { visibility: hidden; }
+  /* 景深陳列：主卡腳下有地面陰影、背後一圈微光；預覽與主卡同尺寸，以底邊中央為軸縮放。 */
+  .depth .card-stage::before { content: ''; position: absolute; inset: -16% -32% -4%; background: radial-gradient(closest-side, #fff4d0b0, #fff4d000); pointer-events: none; animation: depth-glow 3.2s ease-in-out infinite alternate; }
+  .depth .card-stage::after { content: ''; position: absolute; left: 4%; right: 4%; bottom: -4%; height: 8%; background: radial-gradient(closest-side, #0d1d1775, #0d1d1700); pointer-events: none; }
+  .depth .main-card { z-index: 20; transform-origin: 50% 100%; }
+  .depth .preview { inset: 0; top: 0; width: 100%; transform-origin: 50% 100%; transition: transform .42s cubic-bezier(.2,.7,.3,1), filter .42s, opacity .42s; }
+  .depth .preview::after { content: ''; position: absolute; left: 6%; right: 6%; bottom: -4%; height: 7%; background: radial-gradient(closest-side, #0d1d1760, #0d1d1700); }
+  .depth .preview img { display: block; box-shadow: none; }
+  .depth .preview.hidden { pointer-events: none; }
+  /* 目前這張的預覽在主卡正下方待命；主卡 hover 傾斜時會從邊緣露出一張不動的小圖，所以平時隱藏。
+     只切 visibility、不動 opacity 與 transform，換卡成為 slot -1 的瞬間仍從原位接手滑出。 */
+  .depth .preview.current { visibility: hidden; }
+  @keyframes depth-glow { from { opacity: .5; } to { opacity: .9; } }
+  @media (prefers-reduced-motion: reduce) {
+    .depth .preview { transition: none; }
+    .depth .card-stage::before { animation: none; }
+  }
   @media(max-width:899px) {
     .focus-carousel { --card-w: min(56vw, 300px, calc((100svh - 420px) * .716)); inset: 135px 0 200px; }
     .carousel-pager { gap: 10px; margin-top: 17px; }

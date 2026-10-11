@@ -3,12 +3,25 @@ import { createSurfaceWeather, addLandscapeWeather } from './weather-surfaces.js
 import { createClouds } from './clouds.js'
 import { sampleFlight } from './journey.js'
 import { buildNorthernRegion } from './region.js'
-import { createGableGeometry, createBladeGeometry, addSurfaceDetail } from './scenery.js'
+import { createGableGeometry, createBladeGeometry, addSurfaceDetail, addPixelTexture } from './scenery.js'
+import { createPixelPatterns, drawTreeAtlas, TREE_VARIANTS, ROUND_TREES } from './pixel-art.js'
+import { createTufts } from './tufts.js'
+import { buildTerrain, groundAt, terrainAt, cameraRise } from './terrain.js'
+import { createBillboards } from './billboards.js'
+import { createVillagers } from './villagers.js'
+import { BREEZE } from '../config/weather.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 // 依真新鎮參考圖建立可受光的立體微縮模型；所有幾何與材質共用並集中釋放。
-import { Scene, Group, PerspectiveCamera, Fog, Vector3, Mesh, BoxGeometry, ConeGeometry, SphereGeometry, IcosahedronGeometry, CylinderGeometry, MeshStandardMaterial, HemisphereLight, DirectionalLight, Color, Box3, DoubleSide } from 'three'
+import { Scene, Group, PerspectiveCamera, Fog, Vector3, Mesh, BoxGeometry, ConeGeometry, SphereGeometry, IcosahedronGeometry, CylinderGeometry, MeshStandardMaterial, HemisphereLight, DirectionalLight, Color, Box3, DoubleSide, Float32BufferAttribute } from 'three'
 
-export function createVillage({ lowPower = false } = {}) {
+/** 太陽方向（相對受光點）。HD-2D 改為左側光，影子落在物體右側而不被建築本身擋住。 */
+const SUN_OFFSET = new Vector3(-18, 30, 15)
+const HD2D_SUN_OFFSET = new Vector3(-26, 26, 5)
+/** HD-2D 陰影貼圖的涵蓋半徑與解析度。 */
+const SHADOW_SPAN = 36
+const SHADOW_MAP = 2048
+
+export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
   const scene = new Scene()
   const clouds = createClouds({ lowPower })
   scene.add(clouds.mesh)
@@ -30,14 +43,20 @@ export function createVillage({ lowPower = false } = {}) {
   geometry.rock.setIndex(Array.from({ length: geometry.rock.attributes.position.count }, (_, i) => i))
   const trees = [], flowers = [], surfaces = []
   const weatherUniforms = createSurfaceWeather()
+  const patterns = hd2d ? createPixelPatterns() : null
   const vegetation = new Set(['#3b7850','#73ad64','#88ba6d','#a0cb7f','#3f8c5a','#85bc6f','#b4d497','#8cc58e','#357953','#43865b'])
+  // HD-2D 的花瓣與花心也隨風擺動，才不會與底下的葉叢錯開。
+  const blossoms = new Set(['#e77067','#e77973','#ffe09b'])
+  const sways = color => vegetation.has(color) || (hd2d && blossoms.has(color))
   const materials = new Map()
   function material(color) {
     if (!materials.has(color)) {
       const mat = new MeshStandardMaterial({ color, roughness: 0.9, flatShading: !vegetation.has(color) })
       addSurfaceDetail(mat, color)
       if (color === '#3f8c5a' || color === '#85bc6f') mat.side = DoubleSide
-      addLandscapeWeather(mat, weatherUniforms, { vegetation: vegetation.has(color), water: color === '#8fcad2' || color === '#4b98b4' })
+      addLandscapeWeather(mat, weatherUniforms, { vegetation: sways(color), water: color === '#8fcad2' || color === '#4b98b4', breeze: hd2d })
+      const pattern = patterns?.forColor(color)
+      if (pattern) addPixelTexture(mat, pattern)
       materials.set(color, mat)
     }
     return materials.get(color)
@@ -53,10 +72,26 @@ export function createVillage({ lowPower = false } = {}) {
   const box = (c, x, y, z, w, h, d, p = root) => shape('box', c, x, y, z, w, h, d, p)
   const ambient = new HemisphereLight('#e6f4ff', '#638366', 1.9)
   const sun = new DirectionalLight('#fff1d0', 2.25)
-  sun.position.set(-18, 30, 15)
+  const sunOffset = hd2d ? HD2D_SUN_OFFSET : SUN_OFFSET
+  // HD-2D 壓低環境光、提高直射光：受光面亮度相近，影子明顯加深。
+  const lighting = hd2d ? { sun: 3, ambient: 1.25 } : { sun: 2.25, ambient: 1.9 }
+  sun.position.copy(sunOffset)
   scene.add(ambient, sun)
+  // HD-2D 的建築與樹投下實際陰影；陰影範圍跟著鏡頭移動（見 update），低效能裝置不開。
+  const shadowed = hd2d && !lowPower
+  if (shadowed) {
+    sun.castShadow = true
+    sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP)
+    Object.assign(sun.shadow.camera, { left: -SHADOW_SPAN, right: SHADOW_SPAN, top: SHADOW_SPAN, bottom: -SHADOW_SPAN, near: 1, far: 110 })
+    sun.shadow.camera.updateProjectionMatrix()
+    sun.shadow.bias = -0.0004
+    sun.shadow.normalBias = 0.04
+    sun.shadow.radius = 3
+    scene.add(sun.target)
+  }
   // 草地與十字路徑：保留原圖的中央南北通道與住宅前方橫向通道。
-  box('#72b98a', 0, -0.65, -85, 500, 1, 700)
+  // 整片基底草地；HD-2D 的台地另外堆疊在上面，基底本身不抬升。
+  box('#72b98a', 0, -0.65, -85, 500, 1, 700).userData.terrain = true
   // 薄荷綠通行地面包圍較深色的四塊庭院，對齊參考圖。
   box('#a4d6ae', 0, -0.13, 0, 31, 0.08, 34)
   for (const [x, z, w, d] of [[-7,-8,9.4,8],[7,-8,9.4,8],[-7.2,4.8,9.4,6.7],[7,4,10.3,7.3]]) {
@@ -87,7 +122,8 @@ export function createVillage({ lowPower = false } = {}) {
       box('#d9e1df', side * 3.08, 1.8, 0, .06, 2.95, 4.2, p)
     }
     box('#52677f', 0, 3.36, 0, 6.55, .18, 4.9, p)
-    for (let y = 0.7; y < 3.3; y += 0.5) box('#b4c6c8', 0, y, 2.26, 6, 0.045, 0.025, p)
+    // HD-2D 的牆板橫紋由像素圖樣提供。
+    if (!hd2d) for (let y = 0.7; y < 3.3; y += 0.5) box('#b4c6c8', 0, y, 2.26, 6, 0.045, 0.025, p)
     // 雙坡屋頂，稜脊與瓦條都有厚度。
     for (const side of [-1, 1]) {
       const roof = box('#cf6754', 0, 3.9, side * 1.32, 6.8, 0.22, 2.95, p)
@@ -121,15 +157,17 @@ export function createVillage({ lowPower = false } = {}) {
   const lab = new Group(); lab.position.set(7, 0, 4); root.add(lab)
   box('#73838b', 0, 0.16, 0, 9, 0.32, 5.8, lab)
   box('#e9d792', 0, 1.5, 0, 8.6, 2.7, 5.4, lab)
-  for (let row = 0; row < 5; row++) {
+  for (let row = 0; row < (hd2d ? 0 : 5); row++) {
     const y = 0.5 + row * 0.48
     box('#f5e8b5', 0, y, 2.71, 8.6, 0.055, 0.03, lab)
     for (let j = 0; j < 8; j++) box('#f5e8b5', -3.9 + j * 1.1 + (row % 2) * 0.45, y + 0.23, 2.72, 0.05, 0.42, 0.03, lab)
   }
   box('#586578', 0, 3, 0, 9.1, 0.36, 5.9, lab)
   box('#9fa8b9', 0, 3.23, 0, 8.6, 0.14, 5.4, lab)
-  for (let x = -4; x <= 4; x += 0.65) box('#737f92', x, 3.32, 0, 0.045, 0.025, 5.4, lab)
-  for (let z = -2.6; z < 2.7; z += 0.65) box('#737f92', 0, 3.33, z, 8.6, 0.025, 0.045, lab)
+  if (!hd2d) {
+    for (let x = -4; x <= 4; x += 0.65) box('#737f92', x, 3.32, 0, 0.045, 0.025, 5.4, lab)
+    for (let z = -2.6; z < 2.7; z += 0.65) box('#737f92', 0, 3.33, z, 8.6, 0.025, 0.045, lab)
+  }
   box('#8e5055', 3, 3.85, -1.3, 1.35, 1.2, 1.45, lab)
   box('#ca7a68', 3, 4.47, -1.3, 1.5, 0.13, 1.6, lab)
   box('#454e66', 3, 4.55, -1.3, 0.95, 0.05, 1.05, lab)
@@ -186,11 +224,14 @@ export function createVillage({ lowPower = false } = {}) {
     }
   }
   pond(-7.2, 13.7, 5.6, 6.4)
+  const treeSprites = []
   function tree(x, z, seed) {
     trees.push({x,z})
     const s = .9 + (seed % 5) * .035
     // 深色根部與三層扇貝狀葉簇，保留遊戲圖的尖頂橢圓輪廓。
     shape('cylinder', '#639f75', x+.15, -.045, z+.18, 1.4*s, .04, 1.2*s)
+    // HD-2D 保留地面的樹影圓盤，樹身改成像素看板。
+    if (hd2d) { treeSprites.push({ x, z, seed, s }); return }
     shape('cylinder', '#826b4b', x, .65, z, .27, 1.3, .27)
     shape('crown', '#3b7850', x, 1.45, z, 1.24*s, .88*s, 1.14*s)
     shape('crown', '#73ad64', x, 2.1, z, 1.18*s, .9*s, 1.09*s)
@@ -217,18 +258,34 @@ export function createVillage({ lowPower = false } = {}) {
     if (Math.abs(x) < 2.2 || Math.abs(z + 1) < 1.8 || Math.abs(z - 9) < 1.7) continue
     box(i % 2 ? '#b4d497' : '#8cc58e', x, 0.015, z, 0.1, 0.07, 0.2)
   }
-  buildNorthernRegion({ box, shape, tree, fence, windowAt, root, lowPower, Group, pond })
+  buildNorthernRegion({ box, shape, tree, fence, windowAt, root, lowPower, Group, pond, terraced: hd2d })
+  if (hd2d) buildTerrain(box)
 
   // 同材質的靜態模型合併成一筆繪製，樹列與草地不逐物件發出 draw call。
   root.updateMatrixWorld(true)
   const batches = new Map()
+  // HD-2D：合併前記下每個方塊的範圍與顏色，供草叢判斷哪裡是裸露的草地。
+  const colorOf = new Map([...materials].map(([color, mat]) => [mat, color]))
+  const groundBoxes = []
+  const center = new Vector3()
   root.traverse(object => {
     if (!object.isMesh) return
+    const bounds = new Box3().setFromObject(object)
+    // HD-2D 地形：物件依中心點抬到所在台地或小丘的高度；台地、牆與階梯本身已在正確高度。
+    bounds.getCenter(center)
+    const lift = hd2d && !object.userData.terrain ? groundAt(center.x, center.z) : 0
+    bounds.translate(center.set(0, lift, 0))
+    if (hd2d && object.geometry === geometry.box) groundBoxes.push({ box: bounds, color: colorOf.get(object.material) })
     // 屋頂及建築包圍盒作降雨落點；雨不會在屋內继续落下。
     if (object.geometry === geometry.box && object.scale.x > 2 && object.scale.z > 1 && object.position.y > 2.7) {
-      surfaces.push(new Box3().setFromObject(object))
+      surfaces.push(bounds.clone())
     }
     const transformed = object.geometry.clone().applyMatrix4(object.matrixWorld)
+    if (lift) transformed.translate(0, lift, 0)
+    // 植物記下所在地面高度，微風依離地高度擺動。
+    if (hd2d && sways(colorOf.get(object.material))) {
+      transformed.setAttribute('swayBase', new Float32BufferAttribute(new Float32Array(transformed.attributes.position.count).fill(lift), 1))
+    }
     if (!batches.has(object.material)) batches.set(object.material, [])
     batches.get(object.material).push(transformed)
   })
@@ -238,32 +295,68 @@ export function createVillage({ lowPower = false } = {}) {
     const combined = mergeGeometries(parts)
     parts.forEach(part => part.dispose())
     merged.push(combined)
-    root.add(new Mesh(combined, mat))
+    const mesh = new Mesh(combined, mat)
+    mesh.castShadow = mesh.receiveShadow = shadowed
+    root.add(mesh)
   })
-  const weather = createWeather(scene, { lowPower, trees, flowers, surfaces, clouds })
+  // HD-2D：天氣的落點與近地效果依含階梯的地形高度抬到台地上。
+  const weather = createWeather(scene, { lowPower, trees, flowers, surfaces, clouds, ground: hd2d ? terrainAt : null })
+  const treeBillboards = hd2d && treeSprites.length ? createBillboards({
+    canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
+    sway: { time: weatherUniforms.time, wind: weatherUniforms.wind }
+  }) : null
+  treeSprites.forEach((t, i) => {
+    // 真新鎮保留圓頂樹；道路兩側與城外的樹林多為針葉樹。
+    const edge = Math.abs(t.x) >= 15.5
+    const conifer = edge && (t.z < -19 ? t.seed % 3 !== 0 : t.seed % 3 === 0)
+    const variant = conifer ? ROUND_TREES + (t.seed % (TREE_VARIANTS - ROUND_TREES)) : t.seed % ROUND_TREES
+    treeBillboards.set(i, t.x, groundAt(t.x, t.z), t.z, variant, 0, false, t.s)
+  })
+  if (treeBillboards) { treeBillboards.commit(); scene.add(treeBillboards.mesh) }
+  const tufts = hd2d ? createTufts({ boxes: groundBoxes, lowPower, sway: { time: weatherUniforms.time, wind: weatherUniforms.wind } }) : null
+  if (tufts) scene.add(tufts.mesh)
+  const villagers = hd2d ? createVillagers({ lowPower, heightAt: terrainAt }) : null
+  if (villagers) scene.add(villagers.group)
+  const spriteTint = new Color()
   let windTime = 0
   const flightPosition = new Vector3()
   const flightTarget = new Vector3()
+  const shadowFocus = new Vector3()
   function resize(w, h) {
     camera.aspect = w / h
     // 直向螢幕維持足夠橫向視野，仍保留透視與低空高度。
     camera.fov = w < h ? 72 : 56
     camera.updateProjectionMatrix()
+    villagers?.resize(w, h, camera)
   }
   function update(pointer, now, reduced, progress = 0, dt = 0) {
     if (!reduced) windTime += Math.max(0, Math.min(dt, .1))
     weatherUniforms.time.value = reduced ? 0 : windTime
     clouds.update(dt, reduced)
     // 減少動態時固定在真新鎮，完全停用捲動飛行與波紋。
-    sampleFlight(reduced ? 0 : progress, flightPosition, flightTarget)
+    sampleFlight(reduced ? 0 : progress, flightPosition, flightTarget, pitch)
     const amplitude = camera.aspect < 1 ? 0.25 : 0.55
+    // HD-2D 台地：鏡頭與注視點一起隨地形平滑升降，俯角不變。
+    const rise = hd2d && !reduced ? cameraRise(flightPosition.z - 16) : 0
+    flightPosition.y += rise
+    flightTarget.y += rise
     camera.position.copy(flightPosition)
     camera.position.x += reduced ? 0 : pointer.x * amplitude
     camera.position.y += reduced ? 0 : pointer.y * 0.15
     camera.lookAt(flightTarget)
+    if (shadowed) {
+      // 陰影範圍跟著鏡頭前方地面移動；以陰影貼圖一格為單位對齊，移動時邊緣不閃爍。
+      camera.getWorldDirection(shadowFocus).multiplyScalar(18).add(camera.position)
+      const step = SHADOW_SPAN * 2 / SHADOW_MAP
+      shadowFocus.set(Math.round(shadowFocus.x / step) * step, 0, Math.round(shadowFocus.z / step) * step)
+      sun.target.position.copy(shadowFocus)
+      sun.position.copy(shadowFocus).add(sunOffset)
+    }
     weather.update(dt, camera, reduced)
+    villagers?.update(Math.min(dt, .1), camera, reduced)
     const env = weather.environment()
-    weatherUniforms.wind.value = reduced ? 0 : env.wind
+    // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
+    weatherUniforms.wind.value = reduced ? 0 : hd2d ? Math.max(BREEZE, env.wind) : env.wind
     weatherUniforms.motion.value = reduced ? 0 : 1
     for (const key of ['aura','leaves','embers','orbs','shards','petals','rays','rain']) {
       weatherUniforms[key].value = key === 'aura' && reduced ? 0 : weather.state.weights[key]
@@ -282,14 +375,27 @@ export function createVillage({ lowPower = false } = {}) {
     }
     scene.fog.color.copy(look.skyBottom)
     sun.color.copy(look.light)
-    sun.intensity = 2.25 * (1 - look.windows * 0.65)
-    ambient.intensity = (1.9 - look.windows * 0.65) * Math.max(.55, env.light)
+    sun.intensity = lighting.sun * (1 - look.windows * 0.65)
+    ambient.intensity = lighting.ambient * (1 - look.windows * 0.34) * Math.max(.55, env.light)
     ambient.color.copy(new Color('#d7edff')).lerp(new Color('#879cdb'), look.windows).lerp(env.sky, env.tint*.28)
     glass.emissive.set('#ffc875'); glass.emissiveIntensity = look.windows * 1.4
     glass.color.set('#83c8e2').lerp(new Color('#ffe4a2'), look.windows)
+    if (hd2d) {
+      // 看板不受燈光影響，改以場景光色染色；夜晚保留最低亮度，人物與樹不會黑成剪影。
+      spriteTint.copy(look.light).multiplyScalar(Math.max(.55, env.light))
+      const peak = Math.max(spriteTint.r, spriteTint.g, spriteTint.b)
+      if (peak < .62) spriteTint.multiplyScalar(.62 / peak)
+      treeBillboards?.setTint(spriteTint)
+      tufts?.setTint(spriteTint)
+      villagers?.setLook(spriteTint, look.windows > .5)
+    }
   }
-  return { scene, camera, weather, resize, update, setLook, dispose() {
+  return { scene, camera, weather, villagers, resize, update, setLook, overlay: villagers?.overlay ?? null, dispose() {
     clouds.dispose()
+    treeBillboards?.dispose()
+    tufts?.dispose()
+    villagers?.dispose()
+    patterns?.dispose()
     weather.dispose()
     merged.forEach(g => g.dispose())
     Object.values(geometry).forEach(g => g.dispose())

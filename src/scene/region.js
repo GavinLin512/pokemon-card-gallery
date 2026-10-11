@@ -1,9 +1,82 @@
+import { splitAtEdges, nearTerrace, groundAt, TERRACES, PLATEAUS, STAIRS, CHEEK } from './terrain.js'
+
+/** route-01.webp 的像素座標換算成世界座標：寬度每 12 像素 1 單位，深度每像素 0.16 單位。 */
+export const routePoint = (px, py) => [(px - 192) / 12, -19 - (608 - py) * .16]
+const LEDGE_SPECS = [[106,510,148],[264,510,176],[324,427,48],
+  [106,333,50],[264,333,174],[47,333,30],[87,253,108],[86,173,108],
+  [86,93,108],[239,94,159]]
+/**
+ * 一號道路的土坡 { x0, x1, z }：原作的單向跳台，只能由北往南跳下。
+ * 現行畫風以窄土堤呈現；HD-2D 改由 terrain.js 的台地與高地擋土牆呈現，後方是較高的地面。
+ */
+export const ROUTE_LEDGES = LEDGE_SPECS.map(([px, py, width]) => {
+  const [x, z] = routePoint(px, py)
+  return { x0: x - width / 24, x1: x + width / 24, z }
+})
+
+/** 從區段清單中挖掉 [a, b]。 */
+const subtract = (pieces, [a, b]) => pieces
+  .flatMap(([x0, x1]) => [[x0, Math.min(x1, a)], [Math.max(x0, b), x1]])
+  .filter(([x0, x1]) => x1 - x0 > 1e-6)
+/**
+ * HD-2D 的土坡面 { x0, x1, z, low, high }：原作土坡所在的那段擋土牆正面，z 是所在的台地邊界或高地南緣。
+ * 同一道牆上相連的土坡合併；階梯與兩側矮牆處切開；高地與台地同高相接、沒有牆的地方略過；太短的碎段不做。
+ * 只有這些段落能從高處往南跳下，其餘擋土牆不能通行。
+ */
+export const LEDGE_FACES = (() => {
+  const lines = new Map()
+  for (const l of ROUTE_LEDGES) {
+    const z = TERRACES.find(t => Math.abs(t.z - l.z) < 1)?.z ?? PLATEAUS.find(p => Math.abs(p.south - l.z) < .1)?.south
+    if (z === undefined) continue
+    lines.set(z, [...(lines.get(z) ?? []), [l.x0, l.x1]])
+  }
+  const faces = []
+  lines.forEach((spans, z) => {
+    let pieces = []
+    for (const [x0, x1] of spans.sort((a, b) => a[0] - b[0])) {
+      const last = pieces[pieces.length - 1]
+      if (last && x0 <= last[1]) last[1] = Math.max(last[1], x1)
+      else pieces.push([x0, x1])
+    }
+    for (const s of STAIRS) if (s.axis === 'z' && s.top === z) pieces = subtract(pieces, [s.at - s.width / 2 - CHEEK, s.at + s.width / 2 + CHEEK])
+    for (const p of PLATEAUS) if (p.north === z) pieces = subtract(pieces, [p.x0, p.x1])
+    for (const [x0, x1] of pieces) {
+      if (x1 - x0 < 1) continue
+      const x = (x0 + x1) / 2
+      faces.push({ x0, x1, z, low: groundAt(x, z + .05), high: groundAt(x, z - .05) })
+    }
+  })
+  return faces
+})()
+/** 原圖一格（16 像素）的世界尺寸；路中的樹叢在原圖佔 2×2 格。 */
+export const TILE = { x: 16 / 12, z: 16 * .16 }
+/** 一號道路的樹：路中的樹叢（原圖像素座標，grove）與兩側樹林。 */
+export const ROUTE_TREES = [
+  ...[[143,80],[143,112],[143,145],[48,248],[175,247],[207,247],[239,247],
+    [48,406],[80,406],[112,406],[144,406],[175,406]].map(([px, py]) => {
+    const [x, z] = routePoint(px, py)
+    return { x, z, seed: px + py, grove: true }
+  }),
+  ...Array.from({ length: 36 }, (_, i) => {
+    const z = -20 - i * 2.7
+    const row = [{ x: -16, z, seed: i }, { x: 16, z, seed: i + 7 }]
+    return i % 2 ? row : [...row, { x: -19, z: z - 1, seed: i + 4 }, { x: 19, z: z - 1, seed: i + 9 }]
+  }).flat()
+]
+/** 一號道路兩側的花叢（每叢四株，由此點往東、往南排開）與告示牌。 */
+const ROUTE_FLOWERS = Array.from({ length: 6 }, (_, k) => {
+  const z = -20 - k * 6 * 2.7
+  return [[-12, z], [11, z - 3]]
+}).flat()
+export const ROUTE_SIGNS = [[-3, -23], [3, -108]]
+
 // 真新鎮北側的連續地景。沿用村莊的幾何、材質與合併流程。
-export function buildNorthernRegion({ box, shape, tree, fence, windowAt, root, lowPower, Group, pond }) {
+// terraced（HD-2D）時，路面在台地與高地邊緣切段，土坡改由擋土牆與後方的高地取代（見 terrain.js）。
+export function buildNorthernRegion({ box, shape, tree, fence, windowAt, root, lowPower, Group, pond, terraced = false }) {
   const road = '#e3cf91'
-  const path = (x, z, w, d) => box(road, x, -0.055, z, w, 0.1, d)
+  const pieces = (x, z, w, d) => (terraced ? splitAtEdges(x, z, w, d) : [[x, z, w, d]])
+  const path = (x, z, w, d) => pieces(x, z, w, d).forEach(([cx, cz, cw, cd]) => box(road, cx, -0.055, cz, cw, 0.1, cd))
   // 依 route-01.webp 的像素地圖配置：南口長草、東側折返、中央雙土坡、北口長草。
-  const routePoint = (px, py) => [(px - 192) / 12, -19 - (608 - py) * .16]
   function routeRect(px, py, w, d, paint = path) {
     const [x,z] = routePoint(px,py)
     paint(x,z,w/12,d*.16)
@@ -23,6 +96,8 @@ export function buildNorthernRegion({ box, shape, tree, fence, windowAt, root, l
   }
   function grassPatch(x, z, w, d) {
     box('#559968', x, -0.025, z, w, 0.1, d)
+    // HD-2D 的長草改由像素草叢密鋪（tufts.js），不建立立體草葉。
+    if (terraced) return
     const step = lowPower ? 1.05 : .72
     for (let dx = -w / 2 + .36; dx < w / 2; dx += step) {
       for (let dz = -d / 2 + .36; dz < d / 2; dz += step) {
@@ -35,27 +110,36 @@ export function buildNorthernRegion({ box, shape, tree, fence, windowAt, root, l
   }
   for (const rect of [[105,542,142,63],[247,566,142,40],[296,532,49,42],
     [239,425,101,82],[254,137,186,79]]) routeRect(...rect, grassPatch)
-  function ledge(px, py, width) {
-    const [x,z] = routePoint(px,py), w=width/12
+  // 土坡：南面是碎石崖面，北側頂上留草緣。
+  function ledge({ x0, x1, z }) {
+    const x = (x0 + x1) / 2, w = x1 - x0
     box('#947965', x, .19, z, w, .52, .48)
     box('#639f75', x, .47, z-.12, w, .08, .65)
     for (let i=0; i<w/.5; i++) {
-      const rock = box(i%2 ? '#867c79' : '#b5987b', x-w/2+i*.5+.2, .18, z+.23, .4, .32, .14)
+      const rock = box(i%2 ? '#867c79' : '#b5987b', x0+i*.5+.2, .18, z+.23, .4, .32, .14)
       rock.rotation.z = (i%3-1)*.18
     }
   }
-  for (const ledgeSpec of [[106,510,148],[264,510,176],[324,427,48],
-    [106,333,50],[264,333,174],[47,333,30],[87,253,108],[86,173,108],
-    [86,93,108],[239,94,159]]) ledge(...ledgeSpec)
-  for (const [px,py] of [[143,80],[143,112],[143,145],[48,248],
-    [175,247],[207,247],[239,247],[48,406],[80,406],[112,406],[144,406],[175,406]]) {
-    const [x,z] = routePoint(px,py); tree(x,z,px+py)
+  // HD-2D 土坡面：土色崖面蓋住那段擋土牆，嵌兩排碎石；牆頂的草緣由台地草皮提供。已在正確高度，合併時不再抬升。
+  function ledgeFace({ x0, x1, z, low, high }) {
+    const face = high - low, w = x1 - x0
+    const place = mesh => { mesh.userData.terrain = true; return mesh }
+    place(box('#947965', (x0 + x1) / 2, low + (face - .1) / 2, z + .05, w, face - .1, .1))
+    for (let row = 0; row < Math.max(1, Math.round(face / .4)); row++) {
+      for (let i = 0; i < w / .5 - row % 2; i++) {
+        const rock = place(box(i % 2 ? '#867c79' : '#b5987b', x0 + i * .5 + .2 + (row % 2) * .25, low + .16 + row * .36, z + .15, .4, .32, .14))
+        rock.rotation.z = ((i + row) % 3 - 1) * .18
+      }
+    }
   }
-  for (let i = 0; i < 36; i++) {
-    const z = -20 - i * 2.7
-    tree(-16, z, i); tree(16, z, i + 7)
-    if (i % 2 === 0) { tree(-19, z - 1, i + 4); tree(19, z - 1, i + 9) }
-    if (i % 6 === 0) { flowers(-12, z, 4); flowers(11, z - 3, 4) }
+  if (terraced) LEDGE_FACES.forEach(ledgeFace)
+  else ROUTE_LEDGES.forEach(ledge)
+  for (const t of ROUTE_TREES) tree(t.x, t.z, t.seed)
+  for (const [x, z] of ROUTE_FLOWERS) {
+    // HD-2D：東側花叢移出土路與階梯；跨在台地邊界上的一叢略過，不會半埋進擋土牆。
+    if (terraced && x > 0) {
+      if (!nearTerrace(z + .45, .75)) flowers(13.2, z, 4)
+    } else flowers(x, z, 4)
   }
   fence(-13.3, -22, 21); fence(2.8, -22, 18)
   function sign(x, z) {
@@ -63,10 +147,10 @@ export function buildNorthernRegion({ box, shape, tree, fence, windowAt, root, l
     box('#e9debd', x, 1.2, z, 1, 0.7, 0.14)
     for (let i = 0; i < 3; i++) box('#8b8871', x, 1.35 - i * 0.16, z + 0.08, 0.65, 0.04, 0.02)
   }
-  sign(-3, -23); sign(3, -108)
+  for (const [x, z] of ROUTE_SIGNS) sign(x, z)
 
   // 常磐市：白色街道環繞市區；入口從南側中央接入。
-  const street = (x, z, w, d) => box('#d2dfce', x, -0.025, z, w, 0.12, d)
+  const street = (x, z, w, d) => pieces(x, z, w, d).forEach(([cx, cz, cw, cd]) => box('#d2dfce', cx, -0.025, cz, cw, 0.12, cd))
   path(0, -116, 5, 10)
   street(0, -122, 38, 4)
   street(-3, -146, 4, 48)

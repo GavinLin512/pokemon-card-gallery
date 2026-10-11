@@ -4,6 +4,10 @@
 
 ## 狀態
 
+天氣特效調整（2026-10-11）：雨滴數量減 20%、雨絲細一半，落地的 X 形水花改為戶外地面的橢圓漣漪加可落在屋頂的彈起水珠；草屬性葉片改為有尖端、葉柄、葉脈與翻轉的葉形；HD-2D 畫風的台地上，雨滴落點、漣漪、水珠、積水、火舌與光圈改依地形高度抬升，不再埋在地面下（PLAN §9.4）。建置、Svelte 檢查與測試通過；桌機無頭 Chrome 已截圖比對前後，手機實機尚未驗收。
+
+背景音樂已加入（2026-10-11）：旅程工具列新增「音樂／靜音」開關，預設關閉；開啟後隨清晨、白天、黃昏、夜晚播放こんとどぅふぇ的四首曲子（[PLAN §9.8](./docs/PLAN.md)），切換時段 1.2 秒交叉淡化，MP3 的循環接縫以 A/B 雙軌在曲末前 0.3 秒交叉淡化蓋過，分頁隱藏時暫停，重新載入後等第一次點擊才續播；播放中畫面最上方有曲名與作者的跑馬燈，底色與文字色跟四個時段天色走並隨光照漸變，換曲時文字淡出再淡入，減少動態模式改為靜止。建置、Svelte 檢查（0 錯誤 0 警告）與 44 項測試通過；無頭 Chrome 以 CDP 走過開關、跑馬燈、跟隨時段、接縫換軌、分頁隱藏與重新載入續播共 13 項，無 console error。實際聽感、iOS Safari 與 Android 實機尚未驗收。
+
 151 系列已併入（2026-09-09）：開場畫面與旅程地圖可切換「劍盾系列」（18 站）與「151 系列」（10 站／55 張），兩系列共用真新鎮到常磐市的路徑，切換後回到該系列第一站，網址 `?series=151` 與瀏覽器歷史可還原。151 閃卡效果來自原作者的 pokemon-cards-151，以第二凍結區與作用域化 CSS 併入（[ADR-0005](./docs/adr/0005-151-second-frozen-zone.md)、[PLAN §15](./docs/PLAN.md)）。建置、Svelte 檢查與 28 項測試通過；headless Chrome 已確認 151 的 ex、大師球反閃與劍盾閃卡站點正常渲染、無 console error。151 的放大層疊與手機效能仍待實機驗收。
 
 搜尋跟隨系列（2026-09-10）：搜尋只在目前系列內找，閃卡類型面板依系列切換（劍盾 18 種、151 十種與站點對應），面板標題、彈窗與結果統計顯示目前系列，切換系列時清空搜尋。29 項測試通過，已對 TCGdex 實際跑過 151 全部 10 種卡種與名稱查詢（PLAN §15.7）。移除 `jsconfig.json` 未使用的 `baseUrl`，Svelte 檢查改為 0 錯誤 0 警告。
@@ -49,6 +53,7 @@ npm run dev
 
 - 本專案沿用 GPL-3.0，見 [`LICENSE`](./LICENSE)。
 - 卡牌閃光效果：[Simon Goellner (simeydotme)](https://github.com/simeydotme/pokemon-cards-css)；151 系列效果：[simeydotme/pokemon-cards-151](https://github.com/simeydotme/pokemon-cards-151)。
+- 背景音樂：[こんとどぅふぇ](https://conte-de-fees.com)（作曲 HiLi-ひぃ-）的「もうあさだよ」「ティンクルハロータウン」「草原の歌」「First Moon」，各曲頁面載明可免費商用、不需署名。
 - Galaxy Holo：[aschefield101](https://www.deviantart.com/aschefield101/art/HoloSheet-2012-313543843)。部分背景：[Vecteezy](https://www.vecteezy.com/free-photos)。
 - 卡牌圖像與資料：展示區沿用原作資料（含 151 系列），來自 [pokemontcg.io](https://pokemontcg.io)；搜尋改用 [TCGdex](https://tcgdex.dev)，畫廊集與部分促銷卡圖片仍取自 pokemontcg.io。
 - 寶可夢中英譯名對照：[神奇寶貝百科「寶可夢列表（在其他語言中）」](https://wiki.52poke.com/zh-hant/寶可夢列表（在其他語言中）)，依 [CC BY-NC-SA 3.0](http://creativecommons.org/licenses/by-nc-sa/3.0/deed.zh-hant) 使用，本專案為非商業用途。Pokémon 相關商標屬任天堂、Creatures、GAME FREAK 所有。

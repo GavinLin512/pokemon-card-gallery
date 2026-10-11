@@ -5,17 +5,23 @@ import { createWeatherState, weatherLook } from './weather-state.js'
 import { particleVertex, particleFragment, effectFragmentEnd } from './weather-shaders.js'
 
 /** 世界座標天氣；與地景共用深度，所有資源集中建立、淡入淡出及釋放。 */
-export function createWeather(scene, { lowPower = false, trees = [], surfaces = [], flowers = [], clouds } = {}) {
+export function createWeather(scene, { lowPower = false, trees = [], surfaces = [], flowers = [], clouds, ground = null } = {}) {
   const group = new Group(); group.name = 'type-weather'; scene.add(group)
   const state = createWeatherState(), effects = [], resources = []
   let time = 0, nextLightning = .4 + Math.random()*.6, flash = 0
-  const heightAt = (x,z) => surfaces.reduce((height,b) =>
-    x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z ? Math.max(height,b.max.y) : height, .05)
+  /** 地面高度：HD-2D 傳入含台地與階梯的地形函式，現行畫風為平地。 */
+  const floorAt = ground ?? (() => 0)
+  /** 該點上方最高的屋頂／建築頂面；沒有建築時為 -Infinity。 */
+  const roofAt = (x,z) => surfaces.reduce((height,b) =>
+    x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z ? Math.max(height,b.max.y) : height, -Infinity)
+  /** 雨滴的停止高度：屋頂，否則地面（含台地）略高一點。 */
+  const heightAt = (x,z) => Math.max(roofAt(x,z), floorAt(x,z)+.05)
+  const covered = (x,z) => roofAt(x,z) > floorAt(x,z)+1
 
   function outdoorPoint() {
     for (let i=0; i<30; i++) {
       const x=(Math.random()-.5)*42, z=22-Math.random()*207
-      if (heightAt(x,z)<1) return {x,z}
+      if (!covered(x,z)) return {x,z}
     }
     // 中央道路無建築，保留一個確定在戶外的後備點。
     return {x:0,z:-30-Math.random()*70}
@@ -36,13 +42,15 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
       if (key==='flower-glow'&&flowers.length) {
         const flower=flowers[i%flowers.length];x=flower.x+(Math.random()-.5)*3;z=flower.z+(Math.random()-.5)*3;y=.6
       }
-      if ([1,3,4,9,11,12].includes(mode)) { ({x,z}=outdoorPoint()) }
+      // 落地漣漪（10）只取戶外地面；彈起水珠（14）仍可落在屋頂。
+      if ([1,3,4,9,10,11,12].includes(mode)) { ({x,z}=outdoorPoint()) }
       if (mode===3) y=1+Math.random()*3
       if (mode===4) y=.5+Math.random()*1.8
       if (mode===11) y=.8+Math.random()*2.8
       if (mode===13) y=1+Math.random()*5
       const height=heightAt(x,z)
-      if (mode!==2&&mode!==10&&height>1) y+=height
+      // 雨滴、落地漣漪與水珠的高度由著色器依 seed.w（屋頂／地面）決定；其餘粒子抬到屋頂或所在台地。
+      if (mode!==2&&mode!==10&&mode!==14) y+=covered(x,z) ? height : floorAt(x,z)
       positions.push(x,y,z); seeds.push(Math.random(),Math.random(),Math.random(),height)
     }
     const geometry=new BufferGeometry()
@@ -54,11 +62,13 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
     const mesh=new Points(geometry,material);mesh.frustumCulled=false
     register(key,weightKey,mesh,material,color,strength,staticEffect)
   }
-  particles('leaves','leaves',0,2500,'#a4d84d',.75)
+  particles('leaves','leaves',0,2500,'#8ccb4b',.8)
   particles('leaf-glow','leaves',5,650,'#d0ff8a',.22,{additive:true,strength:.8})
   particles('embers','embers',1,1000,'#ff9a35',.27,{additive:true})
-  particles('rain','rain',2,14500,'#c1daed',.95,{strength:.8})
-  particles('rain-splash','rain',10,2800,'#d4eeff',.34,{strength:.75})
+  // 2026-10-11：雨量較暴雨版減 20%；落地由 X 形噴濺改為貼地漣漪加彈起水珠（PLAN §9.4）。
+  particles('rain','rain',2,11600,'#c1daed',.95,{strength:.8})
+  particles('rain-splash','rain',10,1500,'#d4eeff',.75,{strength:.8})
+  particles('rain-drops','rain',14,900,'#e6f5ff',.16,{strength:.8})
   particles('rain-mist','rain',4,200,'#859db1',10,{strength:.22,staticEffect:true})
   particles('aura-flow','aura',9,500,'#eeb07b',4,{additive:true,strength:.38})
   particles('aura-dust','aura',12,1600,'#ad805c',.34)
@@ -93,17 +103,18 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
   const ring=`float t=fract(time*.42+vPhase);float r=length(vUv-.5)*2.;
     alpha=(1.-smoothstep(.025,.075,abs(r-t)))*(1.-t);
     alpha+=exp(-abs(r-t)*18.)*(1.-t)*.25;`
-  const centers=Array.from({length:18},(_,i)=>[Math.sin(i*3)*3,.18,14-i*11,15,15,false])
+  // 近地平面（光圈、池塘漣漪、積水、火舌）都抬到所在台地的高度。
+  const centers=Array.from({length:18},(_,i)=>{const x=Math.sin(i*3)*3,z=14-i*11;return [x,floorAt(x,z)+.18,z,15,15,false]})
   planes('aura','aura',centers,ring,'#ff8e4f',{strength:.9,additive:false})
   planes('psychic-rings','orbs',centers,ring,'#c191ff',{strength:.85,additive:false})
   planes('fairy-rings','petals',centers,ring,'#ffa8d1',{strength:.65,additive:false})
   const pond=[]
   for (const [x,z,w,d,y] of [[-7.2,13.7,5.05,5.85,.225],[-12,-134,5.45,5.95,.225]]) {
-    for(let i=0;i<(lowPower?24:48);i++) pond.push([x+(Math.random()-.5)*(w-1.2),y,z+(Math.random()-.5)*(d-1.2),1.1,1.1,false])
+    for(let i=0;i<(lowPower?24:48);i++) pond.push([x+(Math.random()-.5)*(w-1.2),floorAt(x,z)+y,z+(Math.random()-.5)*(d-1.2),1.1,1.1,false])
   }
   planes('ripples','rain',pond,ring.replace('time*.42','time*1.2'),'#c0e9ff',{strength:1.1})
   const puddles=Array.from({length:lowPower?75:160},()=>{
-    const {x,z}=outdoorPoint(); return [x,.09,z,1.5+Math.random()*2.5,1.2+Math.random()*2,false]
+    const {x,z}=outdoorPoint(); return [x,floorAt(x,z)+.09,z,1.5+Math.random()*2.5,1.2+Math.random()*2,false]
   })
   planes('puddles','rain',puddles,`
     vec2 p=vUv-.5;float r=length(p*vec2(1.,1.2));
@@ -114,7 +125,7 @@ export function createWeather(scene, { lowPower = false, trees = [], surfaces = 
   const flames=[]
   for(let i=0;i<(lowPower?85:180);i++) {
     const {x,z}=outdoorPoint(),h=1.2+Math.random()*1.8
-    for (const angle of [0,Math.PI/2]) flames.push([x,h/2+.07,z,.8+Math.random()*.65,h,true,angle])
+    for (const angle of [0,Math.PI/2]) flames.push([x,floorAt(x,z)+h/2+.07,z,.8+Math.random()*.65,h,true,angle])
   }
   planes('flames','embers',flames,`
     float y=vUv.y;float t=time*2.8+vPhase*8.;

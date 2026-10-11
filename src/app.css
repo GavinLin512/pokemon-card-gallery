@@ -197,6 +197,13 @@ button,
   --ui-border: #283d39;
   --ui-shadow: 0 4px 0 #283d3933, 0 12px 32px #172e2922;
 }
+/* 背景音樂跑馬燈（PLAN §9.8）：帶子底色取該時段天色漸層、文字色對應；@property 讓漸層端點能隨場景光照 1.2 秒過渡。 */
+@property --band-a { syntax: '<color>'; inherits: true; initial-value: #79c2ff; }
+@property --band-b { syntax: '<color>'; inherits: true; initial-value: #d9f0ff; }
+:root { --band-a: #79c2ff; --band-b: #d9f0ff; --band-ink: #283d39; }
+:root[data-daycycle='dawn'] { --band-a: #f7b98f; --band-b: #bfe0f7; --band-ink: #283d39; }
+:root[data-daycycle='dusk'] { --band-a: #b8482f; --band-b: #4f2d6e; --band-ink: #fff0dc; }
+:root[data-daycycle='night'] { --band-a: #0d1b3d; --band-b: #1b2c5c; --band-ink: #cfdaff; }
 html { scroll-behavior: auto; scrollbar-width: none; }
 html::-webkit-scrollbar { display: none; }
 html.journey-locked { overflow: hidden; }

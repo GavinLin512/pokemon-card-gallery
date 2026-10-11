@@ -28,6 +28,7 @@
       lowPower: viewport.lowPower,
       reducedMotion: viewport.reducedMotion,
       isMobile: viewport.isMobile,
+      hd2d: viewport.look === 'hd2d',
       period: dayCycle.period,
       onReady: onready,
       onError: fail

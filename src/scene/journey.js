@@ -13,13 +13,18 @@ const flight = new CatmullRomCurve3([
   new Vector3(1, 8, -143)
 ], false, 'centripetal')
 
-/** 同一條路徑可往返；前視距離維持低空平視，沒有俯衝或鏡頭翻轉。 */
-export function sampleFlight(progress, position = new Vector3(), target = new Vector3()) {
+const LOOK_AHEAD = 24
+/** 現行低空平視約 5°；HD-2D 原型改為 20° 斜俯視（前一版訪談定案）。 */
+export const LEVEL_PITCH = Math.atan(2.2 / LOOK_AHEAD)
+export const HD2D_PITCH = 20 * Math.PI / 180
+
+/** 同一條路徑可往返；俯角固定，沒有俯衝或鏡頭翻轉。 */
+export function sampleFlight(progress, position = new Vector3(), target = new Vector3(), pitch = LEVEL_PITCH) {
   const p = Math.max(0, Math.min(1, progress))
   flight.getPointAt(p, position)
   flight.getPointAt(Math.min(1, p + 0.12), target)
-  target.z = position.z - 24
-  target.y = position.y - 2.2
+  target.z = position.z - LOOK_AHEAD
+  target.y = position.y - LOOK_AHEAD * Math.tan(pitch)
   return { position, target }
 }
 

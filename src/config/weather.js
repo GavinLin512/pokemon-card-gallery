@@ -10,6 +10,8 @@ export function weatherKeyFor(card) {
   return weatherByType[type] ?? null
 }
 export const WEATHER_TRANSITION_MS = 2000
+/** HD-2D 的微風：植物擺動的最低風力，晴天也不會靜止。 */
+export const BREEZE = .35
 // 雲量、厚度、環境亮度、近地霧、風、濕度、金屬光澤及背景熱浪。
 export const weatherEffects = {
   clear: { sky: '#b7daee', tint: 0, cloud: '#f4f8ff', cover: 1, thickness: 1, light: 1, fog: 0, wind: 0, wet: 0, metal: 0, heat: 0 },
