@@ -20,6 +20,10 @@ const HD2D_SUN_OFFSET = new Vector3(-26, 26, 5)
 /** HD-2D 陰影貼圖的涵蓋半徑與解析度。 */
 const SHADOW_SPAN = 36
 const SHADOW_MAP = 2048
+/** HD-2D 看板在夜晚至少保留自身顏色的比例（見 billboards.js 的 setFloor）。 */
+const SPRITE_NIGHT_FLOOR = .2
+/** 像素樹樹幹的半寬（相對看板寬度，48 格中的 4 格）：樹影從樹根朝光源那一側的邊緣開始延伸。 */
+const TREE_ROOT_SHIFT = 4 / 48
 
 export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
   const scene = new Scene()
@@ -228,10 +232,11 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
   function tree(x, z, seed) {
     trees.push({x,z})
     const s = .9 + (seed % 5) * .035
+    // HD-2D 的樹身是像素看板；有真實陰影時不再畫地面的樹影圓盤，低效能裝置沒有陰影，保留圓盤代替。
+    if (hd2d) { treeSprites.push({ x, z, seed, s }); if (shadowed) return }
     // 深色根部與三層扇貝狀葉簇，保留遊戲圖的尖頂橢圓輪廓。
     shape('cylinder', '#639f75', x+.15, -.045, z+.18, 1.4*s, .04, 1.2*s)
-    // HD-2D 保留地面的樹影圓盤，樹身改成像素看板。
-    if (hd2d) { treeSprites.push({ x, z, seed, s }); return }
+    if (hd2d) return
     shape('cylinder', '#826b4b', x, .65, z, .27, 1.3, .27)
     shape('crown', '#3b7850', x, 1.45, z, 1.24*s, .88*s, 1.14*s)
     shape('crown', '#73ad64', x, 2.1, z, 1.18*s, .9*s, 1.09*s)
@@ -301,9 +306,11 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
   })
   // HD-2D：天氣的落點與近地效果依含階梯的地形高度抬到台地上。
   const weather = createWeather(scene, { lowPower, trees, flowers, surfaces, clouds, ground: hd2d ? terrainAt : null })
+  // 樹看板投下真實的樹形影子（billboards.js）；草叢與村民只接收陰影。
   const treeBillboards = hd2d && treeSprites.length ? createBillboards({
     canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
-    sway: { time: weatherUniforms.time, wind: weatherUniforms.wind }
+    sway: { time: weatherUniforms.time, wind: weatherUniforms.wind }, castShadow: shadowed, sun: sunOffset.clone().normalize(),
+    rootShift: TREE_ROOT_SHIFT
   }) : null
   treeSprites.forEach((t, i) => {
     // 真新鎮保留圓頂樹；道路兩側與城外的樹林多為針葉樹。
@@ -317,7 +324,6 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
   if (tufts) scene.add(tufts.mesh)
   const villagers = hd2d ? createVillagers({ lowPower, heightAt: terrainAt }) : null
   if (villagers) scene.add(villagers.group)
-  const spriteTint = new Color()
   let windTime = 0
   const flightPosition = new Vector3()
   const flightTarget = new Vector3()
@@ -380,14 +386,16 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
     ambient.color.copy(new Color('#d7edff')).lerp(new Color('#879cdb'), look.windows).lerp(env.sky, env.tint*.28)
     glass.emissive.set('#ffc875'); glass.emissiveIntensity = look.windows * 1.4
     glass.color.set('#83c8e2').lerp(new Color('#ffe4a2'), look.windows)
+    if (shadowed) {
+      // 影子深淺跟著時段（config/dayCycle.js 的 shadow）：白天最深、清晨黃昏較淡、月光最淡；雲層厚時再變柔。
+      sun.shadow.intensity = look.shadow * Math.max(.25, 1 - Math.max(0, env.cover - 1) * .6)
+    }
     if (hd2d) {
-      // 看板不受燈光影響，改以場景光色染色；夜晚保留最低亮度，人物與樹不會黑成剪影。
-      spriteTint.copy(look.light).multiplyScalar(Math.max(.55, env.light))
-      const peak = Math.max(spriteTint.r, spriteTint.g, spriteTint.b)
-      if (peak < .62) spriteTint.multiplyScalar(.62 / peak)
-      treeBillboards?.setTint(spriteTint)
-      tufts?.setTint(spriteTint)
-      villagers?.setLook(spriteTint, look.windows > .5)
+      // 看板由場景燈光照亮、接收影子；夜晚另給最低亮度，人物與樹不會黑成剪影。
+      const floor = look.windows * SPRITE_NIGHT_FLOOR
+      treeBillboards?.setFloor(floor)
+      tufts?.setFloor(floor)
+      villagers?.setLook(floor, look.windows > .5)
     }
   }
   return { scene, camera, weather, villagers, resize, update, setLook, overlay: villagers?.overlay ?? null, dispose() {

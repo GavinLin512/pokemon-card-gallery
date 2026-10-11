@@ -1,5 +1,6 @@
 // 日夜循環（PLAN §9.3）：四個時段的天空、光照與額外效果。
 // 介面色票由 app.css 依 <html data-daycycle="…"> 同步調整。
+// shadow 是 HD-2D 的影子深淺（1 為全深）：白天最深，清晨與黃昏較淡，夜晚月光最淡；切換時段時一起漸變。
 
 export const TRANSITION_MS = 1200
 
@@ -14,7 +15,8 @@ export const periods = [
     intensity: 0.85,
     stars: 0,
     moon: 0,
-    windows: 0
+    windows: 0,
+    shadow: 0.6
   },
   {
     key: 'day',
@@ -26,7 +28,8 @@ export const periods = [
     intensity: 1,
     stars: 0,
     moon: 0,
-    windows: 0
+    windows: 0,
+    shadow: 1
   },
   {
     key: 'dusk',
@@ -38,7 +41,8 @@ export const periods = [
     intensity: 0.8,
     stars: 0.25,
     moon: 0,
-    windows: 0.6
+    windows: 0.6,
+    shadow: 0.75
   },
   {
     key: 'night',
@@ -50,7 +54,8 @@ export const periods = [
     intensity: 0.45,
     stars: 1,
     moon: 1,
-    windows: 1
+    windows: 1,
+    shadow: 0.4
   }
 ]
 

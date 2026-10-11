@@ -273,8 +273,9 @@ export function createVillagers({ lowPower = false, heightAt = () => 0 } = {}) {
     get conversations() {
       return conversations
     },
-    setLook(tint, isNight) {
-      sprites.setTint(tint)
+    /** floor 是夜晚的最低亮度（見 billboards.js 的 setFloor）；isNight 決定聊天用的句子。 */
+    setLook(floor, isNight) {
+      sprites.setFloor(floor)
       night = isNight
     },
     dispose() {

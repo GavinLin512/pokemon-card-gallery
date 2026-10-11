@@ -301,8 +301,9 @@ function drawRoundTree(put, ox, v) {
       if (y > 44) shade -= (y - 44) * .03
       shade += (x + y) % 2 ? .04 : -.04
       put(ox + x, y, palette[toneOf(shade)])
-    } else if (y >= 48 && y <= 69 && x >= left(y) && x <= right(y)) {
-      const edge = y === 69 || x === left(y) || x === right(y)
+    } else if (y >= 48 && x >= left(y) && x <= right(y)) {
+      // 樹幹畫到最底列，看板站在地面上時樹腳與地面相接，投下的影子也從樹腳開始。
+      const edge = y === TREE_H - 1 || x === left(y) || x === right(y)
       const tone = edge ? 'outline' : y < 53 ? 'shadow' : x === left(y) + 1 ? 'light' : x === right(y) - 1 || hash(x, Math.floor(y / 4), 44) > .8 ? 'shadow' : 'base'
       put(ox + x, y, trunkPalette[tone])
     }
@@ -335,8 +336,8 @@ function drawConifer(put, ox, v) {
       if (tier.t > 0 && y - tiers[tier.t - 1].bottom <= 3 && y >= tiers[tier.t - 1].bottom - 1) shade -= .5
       shade += (hash(x, Math.floor(y / 2), v + 60) - .5) * .5
       put(ox + x, y, palette[toneOf(shade)])
-    } else if (y >= 56 && y <= 69 && x >= 21 && x <= 26) {
-      const tone = y === 69 || x === 21 || x === 26 ? 'outline' : y < 61 ? 'shadow' : x === 22 ? 'light' : 'base'
+    } else if (y >= 56 && x >= 21 && x <= 26) {
+      const tone = y === TREE_H - 1 || x === 21 || x === 26 ? 'outline' : y < 61 ? 'shadow' : x === 22 ? 'light' : 'base'
       put(ox + x, y, trunkPalette[tone])
     }
   }

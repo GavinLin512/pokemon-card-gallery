@@ -66,7 +66,8 @@ function lookFromPeriod(p) {
     light: new Color(p.light).multiplyScalar(p.intensity),
     stars: p.stars,
     moon: p.moon,
-    windows: p.windows
+    windows: p.windows,
+    shadow: p.shadow ?? 1
   }
 }
 
@@ -77,6 +78,7 @@ function lerpLook(a, b, t, out) {
   out.stars = a.stars + (b.stars - a.stars) * t
   out.moon = a.moon + (b.moon - a.moon) * t
   out.windows = a.windows + (b.windows - a.windows) * t
+  out.shadow = a.shadow + (b.shadow - a.shadow) * t
   return out
 }
 
@@ -174,7 +176,8 @@ export function createTown(canvas, opts) {
     const moonSize = Math.min(w * MOON.widthFrac, skyH * 0.7)
     const moonTop = Math.max(0.01 * h, Math.min(MOON.y * h, skyH - moonSize * 1.1))
     moonMesh.scale.set(moonSize, moonSize, 1)
-    moon.base.x = MOON.x * w
+    // HD-2D 的方向光從左上照、影子落在右側，月亮也放左上，與影子方向一致；現行畫風維持右上。
+    moon.base.x = (opts.hd2d ? MOON.hd2dX : MOON.x) * w
     moon.base.y = h / 2 - moonSize / 2 - moonTop
 
     // 星星只在實際地平線以上
