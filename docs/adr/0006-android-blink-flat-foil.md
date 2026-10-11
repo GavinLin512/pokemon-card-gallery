@@ -28,11 +28,17 @@ WebKit 與 Gecko 仍把整組交給真正的 3D 合成，Z 排序穩定；Blink 
 - `src/app.css` 以 `html[data-flat-foil]` 覆寫 `.card__front`、`.card__front *`、`.card__shine::before`、`.card__shine::after`
   的 `transform: none` 與 `transform-style: flat`，讓正面各層依 DOM 順序與 z-index 疊放。翻面仍由 `.card__rotator`
   的 preserve-3d 與 `.card__back` 的 rotateY(180deg) 負責，第一次放大的 360 度翻轉與卡背不受影響。
+- 同一個條件下另給 `.card__front` 加 `isolation: isolate`（2026-10-11 補上，原因見後果）。
 - 凍結區與第二凍結區不動。`public/css151/cards-151.css` 用相同類別名稱，只多 `.era-151` 前綴；`app.css` 在 `index.html`
   最後載入，權重相同或更高，兩個系列一併生效。
 
 ## 後果
 
-- Android Blink 上正面閃卡層失去肉眼幾乎不可辨的 1px 深度，視覺無差異；iOS Safari 與 Firefox 維持原狀。
+- Android Blink 上正面閃卡層失去肉眼幾乎不可辨的 1px 深度；iOS Safari 與 Firefox 維持原狀。
+- 第一版只做平面化時其實有視覺差異：`.card__front` 原本靠 `translate3d` 成為堆疊情境，拿掉後 shine、glare 的混合模式
+  失去以卡圖為底的混色群組，閃卡層等於直接蓋在卡圖上。手機回報 VSTAR、VMAX 異圖變暗，訓練家全圖泛白。
+  以桌機 Chrome 強制加上 `data-flat-foil` 重現，劍盾系列半數像素明顯偏差；加上 `isolation: isolate` 後與未平面化時
+  逐像素一致，翻到背面也正常。151 系列實測不受影響，加上後外觀同樣不變。`isolation` 不加回任何 Z 偏移，
+  理論上不影響閃爍修正，但仍需以 Android Chrome 實機確認。
 - 判斷依賴 UA 字串。若日後 Blink 修正壓平行為想比對，需暫時改 `flatFoil` 條件；未保留關閉用的網址參數。
 - 桌機 Chrome 也是 Blink 但未回報問題，暫不套用；若桌機也出現同樣閃爍，把條件放寬為所有 Blink 即可。
