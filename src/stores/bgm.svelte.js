@@ -1,32 +1,32 @@
-// 背景音樂（PLAN §9.8）：預設關閉；開啟後跟隨目前時段播放對應曲子，切換時段時交叉淡化。
+// 背景音樂（PLAN §9.8）：預設開啟；跟隨目前時段播放對應曲子，切換時段時交叉淡化。
 // 每首用 A/B 兩個 <audio> 輪流播放，曲末前交叉淡化到另一個從頭播放，蓋掉 MP3 的循環接縫；
 // 音量由 Web Audio GainNode 控制（iOS 的 HTMLMediaElement.volume 唯讀）。
-// 開關寫入 localStorage['bgm.enabled']；瀏覽器禁止無手勢自動播放，重新載入後等第一次點擊或按鍵才續播。
+// 開關寫入 localStorage['bgm.enabled']（1 開、0 關，沒設定視為開）。瀏覽器禁止無手勢自動播放，所以不在載入時硬播：
+// 進站畫面（EntryGate）載入期間 preload() 先備好曲子，訪客按下「進入真新鎮」的點擊手勢裡再呼叫 enter() 開始播放。
 
 import { dayCycle } from './dayCycle.svelte.js'
 import { CROSSFADE_MS, LOOP_FADE_MS, STOP_FADE_MS, VOLUME, trackFor } from '../config/bgm.js'
 
 const STORAGE_KEY = 'bgm.enabled'
 
+/** 沒設定過（或 localStorage 不可用）視為開啟，只有訪客明確關過才是 0。 */
 function readEnabled() {
   try {
-    return localStorage.getItem(STORAGE_KEY) === '1'
+    return localStorage.getItem(STORAGE_KEY) !== '0'
   } catch {
-    return false
+    return true
   }
 }
 
 function writeEnabled(on) {
   try {
-    if (on) localStorage.setItem(STORAGE_KEY, '1')
-    else localStorage.removeItem(STORAGE_KEY)
+    localStorage.setItem(STORAGE_KEY, on ? '1' : '0')
   } catch {
     /* 私密模式等情況忽略 */
   }
 }
 
-const persisted = readEnabled()
-let enabled = $state(persisted)
+let enabled = $state(readEnabled())
 /** 真的在播（開啟且已有手勢），跑馬燈依此顯示。 */
 let playing = $state(false)
 let failed = $state(false)
@@ -45,10 +45,10 @@ function ramp(gain, target, ms) {
   gain.gain.linearRampToValueAtTime(target, now + ms / 1000)
 }
 
+/** 載入或播放失敗：這次瀏覽停用按鈕，但不覆寫偏好，下次載入仍依預設或訪客的設定再試。 */
 function fail() {
   failed = true
   enabled = false
-  writeEnabled(false)
   stop(0)
 }
 
@@ -78,10 +78,11 @@ function playerFor(key) {
   return p
 }
 
-function play(voice) {
+function play(voice, onBlocked) {
   voice.el.play().catch((e) => {
-    // NotAllowedError 是無手勢的自動播放限制，等第一次點擊再試；其他才算失敗。
-    if (e?.name !== 'NotAllowedError') fail()
+    // NotAllowedError 是無手勢的自動播放限制：回報呼叫端退回未播放狀態，等第一次手勢再試；其他才算失敗。
+    if (e?.name === 'NotAllowedError') onBlocked?.()
+    else fail()
   })
 }
 
@@ -146,7 +147,14 @@ function switchTo(key) {
   const v = p.voices[p.active]
   v.el.currentTime = 0
   ramp(v.gain, VOLUME, CROSSFADE_MS)
-  play(v)
+  play(v, () => {
+    // 被自動播放限制擋下：退回未播放（跑馬燈不出現），等第一次手勢再從頭開始。
+    if (current !== p) return
+    current = null
+    playing = false
+    silence(p, 0)
+    armGesture()
+  })
   schedule(p)
 }
 
@@ -166,12 +174,14 @@ function ensureContext() {
     }
     ctx = new AC()
   }
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
   return true
 }
 
+/** 在手勢內呼叫：沒有手勢時建立的 AudioContext 停在 suspended，這裡的 resume() 才會真的恢復。 */
 function start() {
-  if (ensureContext()) switchTo(dayCycle.key)
+  if (!ensureContext()) return
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+  switchTo(dayCycle.key)
 }
 
 // 分頁隱藏時暫停，回到前景續播並重新排定接縫。
@@ -188,13 +198,31 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 
-// 上次開著：等第一次點擊或按鍵（有手勢）再開始。點「音樂」關閉時按鈕先處理，這裡看到 enabled 已是 false。
-if (persisted) {
+let armed = false
+/**
+ * 備援：進站按鈕啟動後仍被自動播放限制擋下（play() 回報 NotAllowedError）時，等下一次點擊或按鍵再從頭開始；
+ * 滾輪捲動不算手勢。點「音樂」關閉時按鈕先處理，這裡看到 enabled 已是 false。只監聽 click 與 keydown：
+ * 觸控的 pointerdown 還沒取得播放許可，若在那時就試播會把 current 佔住，之後的 click 就不再重試。
+ */
+function armGesture() {
+  if (armed) return
+  armed = true
   const resume = () => {
+    armed = false
+    document.removeEventListener('click', resume)
+    document.removeEventListener('keydown', resume)
     if (enabled && !current) start()
   }
-  document.addEventListener('click', resume, { once: true })
-  document.addEventListener('keydown', resume, { once: true })
+  document.addEventListener('click', resume)
+  document.addEventListener('keydown', resume)
+}
+
+/** 開關的共同路徑：寫入偏好並開始或停止播放；呼叫端須在手勢內（開始播放需要）。 */
+function setEnabled(on) {
+  enabled = on
+  writeEnabled(on)
+  if (on) start()
+  else stop()
 }
 
 $effect.root(() => {
@@ -220,9 +248,23 @@ export const bgm = {
   },
   toggle() {
     if (failed) return
-    enabled = !enabled
-    writeEnabled(enabled)
-    if (enabled) start()
-    else stop()
+    setEnabled(!enabled)
+  },
+  /**
+   * 進站畫面載入期間呼叫：先建立 AudioContext（維持 suspended）並開始下載目前時段的曲子，
+   * 按下「進入真新鎮」後不必再等網路。靜音訪客不下載；沒有手勢時不會出聲。
+   */
+  preload() {
+    if (!enabled || failed || !ensureContext()) return
+    playerFor(dayCycle.key)
+  },
+  /**
+   * 進站按鈕的點擊手勢內呼叫（須同步，iOS 才放行）：music 為 true 開啟並開始播放，false 靜音。
+   * 與目前狀態相同就不動；兩種選擇都寫入偏好，與工具列的開關一致。
+   */
+  enter(music) {
+    if (failed) return
+    if (music === enabled && (!music || current)) return
+    setEnabled(music)
   }
 }

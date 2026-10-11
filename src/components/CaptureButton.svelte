@@ -196,7 +196,7 @@
 
   .label {
     font-family: var(--font-display);
-    font-size: 13px;
+    font-size: var(--text-min);
     padding: 2px 10px;
     border-radius: 999px;
     color: var(--ink);

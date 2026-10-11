@@ -4,7 +4,7 @@ import { drawVillagerAtlas, VILLAGER_VARIANTS, VILLAGER_FRAME } from './villager
 import { createBillboards } from './billboards.js'
 import { walkNodes, walkNeighbors } from './walkways.js'
 import { createRouteNav, MOVE } from './route-nav.js'
-import { VILLAGER_COUNTS, VILLAGER_COUNTS_LOW, VILLAGER_SPEED, CHAT_LINE_SECONDS, chatLines } from '../config/villagers.js'
+import { VILLAGER_COUNTS, VILLAGER_COUNTS_LOW, VILLAGER_SPEED, CHAT_LINE_SECONDS, pickChat } from '../config/villagers.js'
 
 const WIDTH = 1.1, HEIGHT = 1.65
 /** 每跨一步的距離；走路動畫依實際移動距離推進，快慢一致。 */
@@ -67,7 +67,9 @@ export function createVillagers({ lowPower = false, heightAt = () => 0 } = {}) {
   const overlay = new Scene()
   const bubbleTextures = new Map()
   const conversations = []
-  let night = false
+  /** 目前時段（config/dayCycle.js 的 key）與屬性天氣（null 為原景），決定聊天用的句子。 */
+  let period = 'day'
+  let weather = null
   let screenScale = 0.001
   let pixelScale = 2
   /** 每個對話框像素佔的裝置像素數；貼圖與螢幕一比一，文字才銳利。 */
@@ -175,7 +177,7 @@ export function createVillagers({ lowPower = false, heightAt = () => 0 } = {}) {
       // 隔著擋土牆一高一低的兩人不會搭話。
       if (d > 1.9 || d < 0.7 || Math.abs(heightAt(a.x, a.z) - heightAt(b.x, b.z)) > .3) continue
       if (Math.random() > 0.45) { a.cooldown = b.cooldown = 3; continue } // 擦身而過
-      const { lines } = pick(chatLines.filter(c => c.when === 'any' || c.when === (night ? 'night' : 'day')))
+      const lines = pickChat(period, weather)
       a.state = b.state = 'chat'
       face(a, b.x, b.z)
       face(b, a.x, a.z)
@@ -273,10 +275,20 @@ export function createVillagers({ lowPower = false, heightAt = () => 0 } = {}) {
     get conversations() {
       return conversations
     },
-    /** floor 是夜晚的最低亮度（見 billboards.js 的 setFloor）；isNight 決定聊天用的句子。 */
-    setLook(floor, isNight) {
+    /** floor 是夜晚的最低亮度（見 billboards.js 的 setFloor）。 */
+    setLook(floor) {
       sprites.setFloor(floor)
-      night = isNight
+    },
+    /** 目前時段的 key（dawn／day／dusk／night），切換時段時由 town.js 傳入目標時段；接下來開始的對話改用該時段的句子。 */
+    setPeriod(key) {
+      period = key
+    },
+    /** 目前屬性天氣的鍵（weatherEffects），null 為原景。 */
+    setWeather(key) {
+      weather = key
+    },
+    get period() {
+      return period
     },
     dispose() {
       sprites.dispose()

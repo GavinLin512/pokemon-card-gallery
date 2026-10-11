@@ -27,11 +27,11 @@
   {/if}
 </section>
 <style>
-  .result-message { margin: 24px 0 20px; font-size: 14px; color: var(--ink-soft); }
+  .result-message { margin: 24px 0 20px; font-size: var(--text-min); color: var(--ink-soft); }
   .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px 12px; }
   .result { min-width: 0; border: 0; padding: 0; background: none; display: grid; align-content: start; justify-items: center; gap: 5px; }
   .result img { width: 100%; aspect-ratio: 660 / 921; object-fit: contain; border-radius: 7px; transition: translate .2s; } .result:hover img { translate: 0 -5px; }
-  strong { font: 14px var(--font-display); } small { color: var(--ink-soft); font-size: 11px; }
-  .search-empty { text-align: center; padding: 70px 0; color: var(--ink-soft); } .search-empty > span { display: block; font-size: 72px; color: #93a58e; } h3 { color: var(--ink); font-size: 24px; margin-bottom: 12px; } .search-empty p { font-size: 14px; }
+  strong { font: var(--text-min) var(--font-display); } small { color: var(--ink-soft); font-size: var(--text-min); }
+  .search-empty { text-align: center; padding: 70px 0; color: var(--ink-soft); } .search-empty > span { display: block; font-size: 4.5rem; color: #93a58e; } h3 { color: var(--ink); font-size: 1.5rem; margin-bottom: 12px; } .search-empty p { font-size: var(--text-min); }
   @media(max-width:450px) { .result-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>

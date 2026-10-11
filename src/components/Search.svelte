@@ -4,6 +4,7 @@
   import { search } from '../stores/search.svelte.js'
   import { foilTypesFor } from '../config/tcgdex.js'
   import { journey } from '../stores/journey.svelte.js'
+  import Icon from './Icon.svelte'
 
   let open = $state(false)
   let root = $state()
@@ -42,13 +43,10 @@
     bind:value={search.query}
     onfocus={() => (open = true)}
   />
-  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2" />
-    <path d="M21 21l-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-  </svg>
+  <span class="icon"><Icon name="search" size={20} /></span>
   <div class="tools">
     {#if search.query || search.foil}
-      <button type="button" class="tool clear" aria-label="清除搜尋" onclick={() => search.clear()}>×</button>
+      <button type="button" class="tool clear" aria-label="清除搜尋" onclick={() => search.clear()}><Icon name="close" size={20} /></button>
     {/if}
     <button
       type="button"
@@ -94,7 +92,7 @@
     margin: 0;
     padding: 0 88px 0 40px;
     font: inherit;
-    font-size: 16px;
+    font-size: max(14px, 1rem);
     color: var(--ink);
     background: #fff;
     border: 2px solid var(--ui-border);
@@ -119,8 +117,7 @@
   .icon {
     position: absolute;
     left: 12px;
-    width: 20px;
-    height: 20px;
+    display: flex;
     color: var(--ink-soft);
     pointer-events: none;
   }
@@ -151,10 +148,6 @@
     outline: 3px solid var(--accent);
     outline-offset: -2px;
   }
-  .clear {
-    font-size: 24px;
-    line-height: 1;
-  }
   .types svg {
     width: 22px;
     height: 22px;
@@ -179,7 +172,7 @@
   .panel-title {
     margin: 0 4px 10px;
     font-family: var(--font-display);
-    font-size: 14px;
+    font-size: var(--text-min);
     color: var(--ink-soft);
   }
   .panel-title b {
@@ -195,7 +188,7 @@
     min-height: 44px;
     padding: 0 14px;
     font-family: var(--font-display);
-    font-size: 15px;
+    font-size: max(14px, .9375rem);
     color: var(--wood-dark);
     background: #fff;
     border: 2px solid var(--ui-border);
@@ -229,7 +222,7 @@
 
   @media (min-width: 900px) {
     input {
-      font-size: 16px;
+      font-size: max(14px, 1rem);
     }
     .panel-pop {
       min-width: 0;

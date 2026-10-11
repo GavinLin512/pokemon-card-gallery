@@ -229,6 +229,7 @@ export function createTown(canvas, opts) {
   // 日夜
   let lookFrom = lookFromPeriod(opts.period)
   let lookTo = cloneLook(lookFrom)
+  village.villagers?.setPeriod(opts.period.key)
   const look = cloneLook(lookFrom)
   let tweenStart = 0
   let tweening = false
@@ -246,6 +247,7 @@ export function createTown(canvas, opts) {
   function setPeriod(period, immediate = false) {
     lookFrom = cloneLook(look)
     lookTo = lookFromPeriod(period)
+    village.villagers?.setPeriod(period.key)
     if (immediate || state.reducedMotion) {
       lerpLook(lookFrom, lookTo, 1, look)
       applyLook(look)
@@ -407,6 +409,10 @@ export function createTown(canvas, opts) {
     /** 村民（HD-2D 原型），測試用 */
     get villagers() {
       return village.villagers
+    },
+    /** 場景鏡頭，測試用（截圖時投影村民位置） */
+    get camera() {
+      return village.camera
     },
     /** 陰影與繪製狀態，測試用 */
     get renderStats() {

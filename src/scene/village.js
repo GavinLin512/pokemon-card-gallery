@@ -359,6 +359,8 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
       sun.position.copy(shadowFocus).add(sunOffset)
     }
     weather.update(dt, camera, reduced)
+    // 村民依目前屬性天氣（null 為原景）挑對話；時段由 town.js 切換時段時傳入。
+    villagers?.setWeather(weather.state.key)
     villagers?.update(Math.min(dt, .1), camera, reduced)
     const env = weather.environment()
     // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
@@ -395,7 +397,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch } = {}) {
       const floor = look.windows * SPRITE_NIGHT_FLOOR
       treeBillboards?.setFloor(floor)
       tufts?.setFloor(floor)
-      villagers?.setLook(floor, look.windows > .5)
+      villagers?.setLook(floor)
     }
   }
   return { scene, camera, weather, villagers, resize, update, setLook, overlay: villagers?.overlay ?? null, dispose() {

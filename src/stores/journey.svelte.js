@@ -9,6 +9,8 @@ let current = $state.raw(resolvePosition(timelines.get(series), 0))
 let panel = $state(null)
 let expanded = $state(false)
 let opening = $state(true)
+/** 訪客已按下進站畫面的「進入真新鎮」；在此之前開場下降與旅程操作都不開始（PLAN §9.9）。 */
+let entered = $state(false)
 let sceneReady = $state(false)
 let jumping = $state(false)
 let visited = $state({})
@@ -35,11 +37,13 @@ export const journey = {
   set expanded(value) { expanded = value },
   get opening() { return opening },
   set opening(value) { opening = value },
+  get entered() { return entered },
+  set entered(value) { entered = value },
   get sceneReady() { return sceneReady },
   set sceneReady(value) { sceneReady = value },
   get jumping() { return jumping },
   set jumping(value) { jumping = value },
-  get paused() { return !!panel || expanded || jumping },
+  get paused() { return !entered || !!panel || expanded || jumping },
   get visited() { return visited },
   visit(id) { visited = { ...visited, [id]: true } },
   selection(id) { return selections[id] ?? 0 },

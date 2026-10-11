@@ -1,5 +1,6 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { sections as swshSections, sliceCards, buildCardSectionMap } from './config/sections.js'
   import { DEFAULT_SERIES, allSections, seriesOfSection } from './config/series.js'
   import { cards as cardRegistry } from './stores/cards.svelte.js'
@@ -8,6 +9,8 @@
   import { journey } from './stores/journey.svelte.js'
   import { landingFor, restorePosition, advancePosition } from './journey/timeline.js'
   import { activeCard } from './lib/stores/activeCard.js'
+  import EntryGate from './components/EntryGate.svelte'
+  import Icon from './components/Icon.svelte'
   import JourneyHud from './components/JourneyHud.svelte'
   import JourneyCarousel from './components/JourneyCarousel.svelte'
   import JourneyMap from './components/JourneyMap.svelte'
@@ -42,9 +45,14 @@
   let navigationToken = 0
   let hadActive = false
   let disposed = false
+  /** 舞台內容的淡出／淡入時長（到站浮現仍由 app.css 的 stop-rise 負責）；減少動態時立即切換。 */
+  const motion = (duration, delay = 0) => viewport.reducedMotion ? { duration: 0 } : { duration, delay }
   const grouped = $derived(journey.sections.map(section => ({ section, cards: sliceCards(cards, section) })))
   const stop = $derived(journey.current.stop)
-  const currentCards = $derived(stop ? grouped[stop.index]?.cards ?? [] : [])
+  // 舞台內容讀「最後顯示過的停靠站」：離站淡出的 220ms 內 stop 已是 null，但淡出中的標題、輪播與博士（計時器仍會讀 props）需要完整資料。
+  let lastStop = null
+  const shown = $derived.by(() => { if (stop) lastStop = stop; return stop ?? lastStop })
+  const currentCards = $derived(shown ? grouped[shown.index]?.cards ?? [] : [])
 
   function hashStop() {
     try { const id = decodeURIComponent(location.hash.slice(1)); return allSections.some(s => s.id === id) ? id : null } catch { return null }
@@ -74,14 +82,13 @@
 
   function finishOpening() {
     cancelAnimationFrame(openingFrame)
+    openingFrame = 0
     openingAmount = 0
     journey.opening = false
   }
-  function ready(failed = false) {
-    if (journey.sceneReady) { if (failed) { sceneFailed = true; finishOpening() } return }
-    sceneFailed = failed
-    journey.sceneReady = true
-    if (!journey.opening || viewport.reducedMotion || failed) { finishOpening(); return }
+  /** 開場下降：場景就緒且訪客按下進站畫面的按鈕之後才開始，音樂也在同一下點擊啟動。 */
+  function runOpening() {
+    if (openingFrame) return
     const start = performance.now()
     function frame(now) {
       const t = Math.min(1, (now - start) / 1800)
@@ -90,6 +97,12 @@
       else finishOpening()
     }
     openingFrame = requestAnimationFrame(frame)
+  }
+  function ready(failed = false) {
+    if (journey.sceneReady) { if (failed) { sceneFailed = true; finishOpening() } return }
+    sceneFailed = failed
+    journey.sceneReady = true
+    if (!journey.opening || viewport.reducedMotion || failed) finishOpening()
   }
   async function loadCards() {
     loadError = false
@@ -211,7 +224,7 @@
   $effect(() => {
     const id = stop?.id
     const available = currentCards.length > 0
-    const blocked = journey.opening || !journey.sceneReady || journey.jumping
+    const blocked = journey.opening || !journey.sceneReady || !journey.entered || journey.jumping
     reveal = false
     if (!id || !available || blocked) return
     revisit = untrack(() => !!journey.visited[id])
@@ -234,9 +247,11 @@
     if (next) { const image = new Image(); image.src = next.images.large }
   })
   $effect(() => { if (viewport.reducedMotion) finishOpening() })
+  $effect(() => { if (journey.sceneReady && journey.entered && journey.opening) untrack(runOpening) })
+  // 進站畫面的按鈕消失後，把焦點交給舞台，鍵盤與讀屏接著從旅程開始。
+  $effect(() => { if (journey.entered) tick().then(() => document.querySelector('.journey-stage')?.focus({ preventScroll: true })) })
 
   onMount(() => {
-    document.getElementById('boot-screen')?.remove()
     if (viewport.cardTest.size) document.documentElement.dataset.cardtest = [...viewport.cardTest].join(' ')
     if (viewport.flatFoil) document.documentElement.setAttribute('data-flat-foil', '')
     const previousRestoration = history.scrollRestoration
@@ -278,7 +293,7 @@
       setPosition(Number.isFinite(history.state?.journeyPosition) ? restorePosition(journey.timeline, history.state) : hash ? landingFor(journey.timeline, hash) : 0, true)
     }
     const skipOnInput = event => {
-      if (!journey.opening) return
+      if (!journey.opening || !journey.entered) return
       if (event.type === 'keydown' && !['ArrowDown', 'PageDown', ' ', 'End'].includes(event.key)) return
       event.preventDefault()
       finishOpening(); setPosition(0, true)
@@ -335,33 +350,35 @@
 {/await}
 <div class="journey-distance" style:height={`${(journey.timeline.length + 1) * height}px`} aria-hidden="true"></div>
 <JourneyHud {openPanel} {navigate} />
-<main class="journey-stage" class:concealed={journey.panel === 'search' || !!selectedSearchCard} tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard} data-stop={stop?.id ?? 'travel'}>
-  {#if !journey.sceneReady}
-    <div class="opening-title loading" role="status"><span class="pokeball-symbol"></span><p class="eyebrow">一段閃閃發光的冒險</p><h1>寶可夢<br />卡牌展示館</h1><p>正在前往真新鎮…</p><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
-  {:else if journey.opening || (!stop && journey.current.position < .6)}
-    <div class="opening-title"><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><div class="series-pick"><SeriesSwitch value={journey.series} onchange={switchSeries} /></div><button class="primary" onclick={() => navigate(journey.stops[0].id)}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
-  {:else if stop && cards.length}
-    <div class="stop-heading" class:concealed={journey.expanded}><p class="eyebrow">{revisit ? '再次相遇' : '發現新的卡種'} <span> / {String(stop.index + 1).padStart(2, '0')}</span></p><h1>{stop.name}</h1></div>
-    {#if !currentCards.length}
-      <div class="data-status" role="alert">這一站的卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
-    {:else if reveal}
-      {#key stop.id}
-        <JourneyCarousel cards={currentCards} section={stop} />
-        <div class="professor-slot" class:concealed={journey.expanded}><ProfessorDialog text={stop.blurb} instant={revisit} /></div>
-      {/key}
+<EntryGate cardsReady={cards.length > 0 || loadError} />
+<main class="journey-stage" class:concealed={journey.panel === 'search' || !!selectedSearchCard} tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard || !journey.entered} data-stop={stop?.id ?? 'travel'}>
+  {#if journey.entered}
+    {#if journey.opening || (!stop && journey.current.position < .6)}
+      <div class="opening-title" transition:fade|global={motion(220)}><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><div class="series-pick"><SeriesSwitch value={journey.series} onchange={switchSeries} /></div><button class="primary" onclick={() => navigate(journey.stops[0].id)}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
+    {:else if stop && cards.length}
+      <!-- 離站時標題、卡牌與博士一起淡出；Svelte 5 的轉場預設只在自己的區塊切換時播放，上層 if／key 切換要加 global。 -->
+      <div class="stop-heading" class:concealed={journey.expanded} out:fade|global={motion(220)}><p class="eyebrow">{revisit ? '再次相遇' : '發現新的卡種'} <span> / {String(shown.index + 1).padStart(2, '0')}</span></p><h1>{shown.name}</h1></div>
+      {#if !currentCards.length}
+        <div class="data-status" role="alert">這一站的卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
+      {:else if reveal}
+        {#key shown.id}
+          <JourneyCarousel cards={currentCards} section={shown} />
+          <div class="professor-slot" class:concealed={journey.expanded} out:fade|global={motion(220)}><ProfessorDialog text={shown.blurb} instant={revisit} /></div>
+        {/key}
+      {/if}
+    {:else if !stop}
+      <div class="flying-note" in:fade|global={motion(260, 160)} out:fade|global={motion(160)}><span aria-hidden="true">↟</span><p>沿路探索中</p><small>下一站 · {journey.current.nearby?.name}</small></div>
     {/if}
-  {:else if !stop}
-    <div class="flying-note"><span aria-hidden="true">↟</span><p>沿路探索中</p><small>下一站 · {journey.current.nearby?.name}</small></div>
+    {#if loadError}<div class="data-status" role="alert">卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
+    {:else if !cards.length}<div class="data-status" role="status">正在整理卡牌…</div>{/if}
+    {#if sceneFailed}<p class="scene-fallback">靜態地景 · 卡牌旅程仍可繼續</p>{/if}
   {/if}
-  {#if loadError}<div class="data-status" role="alert">卡牌資料載入失敗。<button onclick={loadCards}>重新載入卡牌</button></div>
-  {:else if !cards.length && journey.sceneReady}<div class="data-status" role="status">正在整理卡牌…</div>{/if}
-  {#if sceneFailed}<p class="scene-fallback">靜態地景 · 卡牌旅程仍可繼續</p>{/if}
 </main>
 
 {#if journey.panel}
   <div class="panel-backdrop" class:concealed={!!selectedSearchCard} aria-hidden="true"></div>
   <div tabindex="-1" class="game-panel" class:concealed={!!selectedSearchCard} class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
-    <header class="panel-header"><div><p class="eyebrow">冒險隨身工具{journey.panel === 'search' ? ` · 目前為${journey.seriesInfo.full}` : ''}</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}>×</button></header>
+    <header class="panel-header"><div><p class="eyebrow">冒險隨身工具{journey.panel === 'search' ? ` · 目前為${journey.seriesInfo.full}` : ''}</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}><Icon name="close" /></button></header>
     <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
     <div class="panel-scroll" bind:this={searchView}>
       {#if journey.panel === 'map'}<JourneyMap {navigate} {switchSeries} />
@@ -374,6 +391,6 @@
   <div class="inspection-shade" aria-hidden="true"></div>
   <div class="search-inspection" bind:this={modalCard} role="dialog" aria-modal="true" aria-label={`檢視 ${selectedSearchCard.name}`}><JourneyCard card={selectedSearchCard} /></div>
 {/if}
-{#if journey.expanded}<button class="inspection-close" aria-label="收合卡牌" onpointerdown={e => e.preventDefault()} onclick={() => closeCard()}>× <span>收合卡牌</span></button>{/if}
+{#if journey.expanded}<button class="inspection-close" aria-label="收合卡牌" onpointerdown={e => e.preventDefault()} onclick={() => closeCard()}><Icon name="close" size={20} /><span>收合卡牌</span></button>{/if}
 <CaptureButton />
 <div class="journey-fade" class:on={journey.jumping} aria-hidden="true"></div>

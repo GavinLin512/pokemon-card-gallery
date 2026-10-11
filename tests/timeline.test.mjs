@@ -41,19 +41,34 @@ test('section ids are unique across series and 151 stops reference real cards, a
     }
   }
 })
-test('continuous forward and reverse flight with stationary dwell and clamped endpoint', () => {
+test('camera progress is continuous, eases out of every landing while cards stay, and settles exactly on each stop', () => {
   let last = 0
   for (let position = 0; position <= timeline.length; position += .01) {
     const frame = resolvePosition(timeline, position)
     assert.ok(frame.progress >= last - 1e-12)
+    assert.ok(frame.progress - last < .001, `no camera jump at ${position}`)
     assert.deepEqual(frame, resolvePosition(timeline, position))
     last = frame.progress
   }
+  const final = timeline.segments.at(-1)
   for (const s of timeline.segments) {
-    assert.equal(resolvePosition(timeline, s.arrival + .15).progress, resolvePosition(timeline, s.end - .15).progress)
+    assert.equal(resolvePosition(timeline, s.landing).progress, s.progress)
+    // 離開落點 0.1 個視窗高度：鏡頭已經起步，但仍在停留區內、卡牌照常顯示。
+    const departing = resolvePosition(timeline, s.landing + .1)
+    assert.equal(departing.stop.id, s.id)
+    if (s === final) assert.equal(departing.progress, s.progress)
+    else assert.ok(departing.progress > s.progress && departing.progress < s.progress + .1 * (timeline.segments[s.index + 1].progress - s.progress))
+    const arriving = resolvePosition(timeline, s.landing - .1)
+    assert.equal(arriving.stop.id, s.id)
+    assert.ok(arriving.progress < s.progress)
+    // 停留區邊緣的鏡頭偏移不超過兩站距離的三成，到站浮現時地景只剩最後一小段要滑入；第一站從開場原點出發，到站時走到一半。
+    const before = s.index ? timeline.segments[s.index - 1].progress : 0
+    const remaining = s.progress - resolvePosition(timeline, s.arrival).progress
+    assert.ok(remaining < (s.index ? .3 : .5 + 1e-12) * (s.progress - before))
   }
   assert.equal(resolvePosition(timeline, -100).progress, 0)
   assert.equal(resolvePosition(timeline, 999).stop.id, journeyStops.at(-1).id)
+  assert.equal(resolvePosition(timeline, 999).progress, final.progress)
 })
 test('fast jumps skip intermediate stops; boundary jitter preserves the current encounter', () => {
   const first = timeline.segments[0], last = timeline.segments.at(-1)

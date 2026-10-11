@@ -31,12 +31,12 @@ function parseCardTest() {
 }
 const cardTest = parseCardTest()
 
-/** 場景畫風原型旗標：?look=hd2d 啟用斜俯視、移軸景深與像素紋理；其他值維持現行畫風。 */
+/** 場景畫風（PLAN §16）：預設為 HD-2D（斜俯視、移軸景深、像素紋理、台地與村民）；?look=classic 切回舊的平視畫風以供比對。 */
 const look = (() => {
   try {
-    return new URLSearchParams(location.search).get('look') === 'hd2d' ? 'hd2d' : 'classic'
+    return new URLSearchParams(location.search).get('look') === 'classic' ? 'classic' : 'hd2d'
   } catch {
-    return 'classic'
+    return 'hd2d'
   }
 })()
 
@@ -84,7 +84,7 @@ export const viewport = {
   get cardTest() {
     return cardTest
   },
-  /** 場景畫風：'hd2d' 原型或 'classic' 現行 */
+  /** 場景畫風：'hd2d'（預設）或 'classic'（?look=classic，舊畫風） */
   get look() {
     return look
   },

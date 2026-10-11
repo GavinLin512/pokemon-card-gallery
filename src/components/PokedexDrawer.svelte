@@ -17,9 +17,9 @@
   </ul>
 {/if}
 <style>
-  .dex-count { font-size: 14px; margin-bottom: 24px; } .dex-count > span { font-size: 11px; color: var(--ink-soft); }
-  .dex-empty { display: grid; justify-items: center; gap: 20px; text-align: center; padding: 80px 0; } .dex-empty :global(.pokeball-symbol) { width: 60px; height: 60px; opacity: .6; } h3 { font-size: 24px; } .dex-empty p { font-size: 14px; color: var(--ink-soft); }
+  .dex-count { font-size: var(--text-min); margin-bottom: 24px; } .dex-count > span { font-size: var(--text-min); color: var(--ink-soft); }
+  .dex-empty { display: grid; justify-items: center; gap: 20px; text-align: center; padding: 80px 0; } .dex-empty :global(.pokeball-symbol) { width: 60px; height: 60px; opacity: .6; } h3 { font-size: 1.5rem; } .dex-empty p { font-size: var(--text-min); color: var(--ink-soft); }
   .dex-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; }
-  button { display: grid; gap: 8px; justify-items: center; padding: 0; border: 0; background: transparent; width: 100%; } img { width: 100%; aspect-ratio: 660 / 921; object-fit: contain; border-radius: 7px; } button:hover img { opacity: .8; } button span { font: 13px var(--font-display); }
+  button { display: grid; gap: 8px; justify-items: center; padding: 0; border: 0; background: transparent; width: 100%; } img { width: 100%; aspect-ratio: 660 / 921; object-fit: contain; border-radius: 7px; } button:hover img { opacity: .8; } button span { font: var(--text-min) var(--font-display); }
   @media(max-width:450px) { .dex-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>

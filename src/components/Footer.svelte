@@ -12,7 +12,7 @@
     /* 底部預留停靠路標的高度，避免頁尾被遮住 */
     padding: 24px 16px calc(32px + var(--signpost-h) + env(safe-area-inset-bottom, 0px));
     text-align: center;
-    font-size: 12px;
+    font-size: var(--text-min);
     opacity: 0.6;
   }
   .footer a {

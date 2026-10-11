@@ -121,14 +121,14 @@
 
   .speaker {
     font-family: var(--font-display);
-    font-size: 14px;
+    font-size: var(--text-min);
     color: var(--wood-dark);
     margin-bottom: 2px;
   }
 
   .text {
     position: relative;
-    font-size: 16px;
+    font-size: max(14px, 1rem);
     line-height: 1.7;
     color: var(--ink);
   }
@@ -159,7 +159,7 @@
       height: 72px;
     }
     .text {
-      font-size: 17px;
+      font-size: max(14px, 1.0625rem);
     }
   }
 </style>

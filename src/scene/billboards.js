@@ -36,6 +36,10 @@ export function createBillboards({ canvas, columns, rows = 1, count, width, heig
         #include <uv_vertex>
         vMapUv = vec2(((instanceSprite.z > .5 ? 1. - uv.x : uv.x) + instanceSprite.x) / ${columns}.,
           (uv.y + ${rows - 1}. - instanceSprite.y) / ${rows}.);
+        // emissiveMap 有自己的 UV varying；不同步會把整張圖集縮在一個看板上疊加，夜晚與黃昏出現別格的亮色雜點。
+        #ifdef USE_EMISSIVEMAP
+          vEmissiveMapUv = vMapUv;
+        #endif
       `)
       // 法線固定為世界的上方：看板與地面同樣受光，不因面向鏡頭而忽明忽暗。
       .replace('#include <defaultnormal_vertex>', 'vec3 transformedNormal = normalize((viewMatrix * vec4(0., 1., 0., 0.)).xyz);')

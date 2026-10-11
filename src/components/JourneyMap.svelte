@@ -19,17 +19,17 @@
 </div>
 <style>
   .map-series { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 18px; }
-  .map-series small { color: var(--ink-soft); font-size: 12px; }
-  .map-intro { color: var(--ink-soft); font-size: 14px; margin: 0 0 28px; }
+  .map-series small { color: var(--ink-soft); font-size: var(--text-min); }
+  .map-intro { color: var(--ink-soft); font-size: var(--text-min); margin: 0 0 28px; }
   .map-regions { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 24px; }
-  h3 { display: flex; gap: 9px; align-items: center; padding-bottom: 14px; border-bottom: 2px solid var(--ink); font-size: 22px; }
-  h3 > span { font-size: 26px; color: #457d63; }
+  h3 { display: flex; gap: 9px; align-items: center; padding-bottom: 14px; border-bottom: 2px solid var(--ink); font-size: 1.375rem; }
+  h3 > span { font-size: 1.625rem; color: #457d63; }
   ol { list-style: none; padding: 14px 0 0; margin: 0; }
   li { position: relative; } li:not(:last-child)::after { content: ''; position: absolute; top: 48px; left: 25px; bottom: -12px; border-left: 2px dashed #768d7755; }
-  button { display: flex; align-items: center; gap: 10px; position: relative; width: 100%; text-align: left; background: transparent; border: 2px solid transparent; border-radius: 10px; padding: 8px 4px; font-family: var(--font-display); font-size: 14px; }
+  button { display: flex; align-items: center; gap: 10px; position: relative; width: 100%; text-align: left; background: transparent; border: 2px solid transparent; border-radius: 10px; padding: 8px 4px; font-family: var(--font-display); font-size: var(--text-min); }
   button:hover { background: #e7ebdc; } button.here { background: #f9e0d5; border-color: var(--red); }
   .map-pin { flex: 0 0 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #789080; background: var(--paper); position: relative; z-index: 1; color: var(--ink-soft); }
   .map-pin.visited { background: #d7e8cf; color: #345847; border-color: #345847; } .here .map-pin { background: var(--red); color: white; border-color: var(--ink); }
-  small { display: block; color: var(--ink-soft); font-size: 10px; margin-top: 3px; } .map-arrow { margin-left: auto; color: var(--red); }
-  @media(max-width:899px) { .map-regions { grid-template-columns: 1fr; gap: 26px; } .map-intro { font-size: 12px; } button { font-size: 16px; padding: 10px 4px; } }
+  small { display: block; color: var(--ink-soft); font-size: var(--text-min); margin-top: 3px; } .map-arrow { margin-left: auto; color: var(--red); }
+  @media(max-width:899px) { .map-regions { grid-template-columns: 1fr; gap: 26px; } .map-intro { font-size: var(--text-min); } button { font-size: max(14px, 1rem); padding: 10px 4px; } }
 </style>

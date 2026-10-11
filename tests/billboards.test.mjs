@@ -25,6 +25,9 @@ test('billboards are lit, receive shadows at their centre axis and keep a flat-u
     assert.ok(!shader.vertexShader.includes(`#include <${chunk}>`), `${chunk} 未被替換`)
   }
   assert.match(shader.vertexShader, /transformedNormal = normalize\(\(viewMatrix \* vec4\(0\., 1\., 0\., 0\.\)\)/)
+  // emissiveMap 用自己的 UV varying；沒同步會把整張圖集疊在一個看板上，夜晚出現雜色亮點。
+  assert.match(shader.vertexShader, /#ifdef USE_EMISSIVEMAP\s+vEmissiveMapUv = vMapUv;/)
+  assert.match(ShaderLib.lambert.fragmentShader + '', /emissivemap_fragment/)
   assert.match(shader.vertexShader, /worldPosition = vec4\(bbCenter \+ bbRoot \+ vec3\(0\., position\.y \* bbSize\.y, 0\.\) \+ bbSun \* \.25, 1\.\)/)
   assert.match(shader.vertexShader, /vec3 bbRoot = vec3\(0\.\);/, '沒有 rootShift 時不做樹根位移')
   assert.match(shader.fragmentShader, /bbDither > smoothstep\(8\.00, 13\.00, bbDepth\)/)

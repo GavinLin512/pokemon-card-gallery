@@ -12,24 +12,36 @@ export function createTimeline(stops) {
   return { segments, length: cursor }
 }
 
+/**
+ * 鏡頭進度隨捲動距離連續變化：相鄰兩站落點之間以 smoothstep 銜接，落點處恰為該站進度且斜率為零。
+ * 一離開落點就緩緩起步、移動區間最快、接近下一站落點時減速停住；停留區不再鎖住鏡頭，與進度條同步。
+ */
+function progressAt(segments, position) {
+  const next = segments.find(s => position < s.landing)
+  if (!next) return segments.at(-1).progress
+  const previous = segments[next.index - 1]
+  const from = previous?.landing ?? 0
+  const base = previous?.progress ?? 0
+  const t = clamp((position - from) / (next.landing - from), 0, 1)
+  return base + (next.progress - base) * t * t * (3 - 2 * t)
+}
+
 export function resolvePosition(timeline, distance, previousStop = null) {
   const { segments, length } = timeline
   const position = clamp(Number.isFinite(distance) ? distance : 0, 0, length)
   if (!segments.length) return { position, progress: 0, stop: null, nearby: null, phase: 'travel', local: 0 }
+  const progress = progressAt(segments, position)
   // 離站保留 0.025 視窗的死區；輕微回彈不重播遭遇。
   const previous = segments.find(s => s.id === previousStop)
   if (previous && position >= previous.arrival - .025 && position <= previous.end + .025) {
-    return { position, progress: previous.progress, stop: previous, nearby: previous, phase: 'dwell', local: clamp((position - previous.arrival) / previous.dwell, 0, 1) }
+    return { position, progress, stop: previous, nearby: previous, phase: 'dwell', local: clamp((position - previous.arrival) / previous.dwell, 0, 1) }
   }
   const current = segments.find(s => position < s.end) ?? segments.at(-1)
   const local = (position - current.arrival) / current.dwell
   if (position >= current.arrival) {
-    return { position, progress: current.progress, stop: current, nearby: current, phase: local < .1 ? 'arrival' : local > .9 && current !== segments.at(-1) ? 'departure' : 'dwell', local }
+    return { position, progress, stop: current, nearby: current, phase: local < .1 ? 'arrival' : local > .9 && current !== segments.at(-1) ? 'departure' : 'dwell', local }
   }
-  const from = segments[current.index - 1]?.progress ?? 0
-  const t = clamp((position - current.start) / current.travel, 0, 1)
-  const eased = t * t * (3 - 2 * t)
-  return { position, progress: from + (current.progress - from) * eased, stop: null, nearby: current, phase: 'travel', local: t }
+  return { position, progress, stop: null, nearby: current, phase: 'travel', local: clamp((position - current.start) / current.travel, 0, 1) }
 }
 
 export function landingFor(timeline, id) {

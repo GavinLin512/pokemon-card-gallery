@@ -1,6 +1,7 @@
 <script>
   import { tick } from 'svelte'
   import { cubicOut } from 'svelte/easing'
+  import { fade } from 'svelte/transition'
   import { activeCard } from '../lib/stores/activeCard.js'
   import { journey } from '../stores/journey.svelte.js'
   import { viewport } from '../stores/viewport.svelte.js'
@@ -11,7 +12,7 @@
   let pointer = null
   let suppressUntil = 0
 
-  // 景深陳列（HD-2D 原型，?look=hd2d）：卡牌以底邊中央站在路面上。slot 是與目前卡牌的距離，
+  // 景深陳列（HD-2D 畫風，預設；?look=classic 時用一般陳列）：卡牌以底邊中央站在路面上。slot 是與目前卡牌的距離，
   // 正值沿道路往右上方遠處排列、越遠越小越模糊；-1 是剛看過的卡，換卡時往左下淡出，不留在畫面上（也因此點不到）。
   // 每格為 [x%, y%, 縮放, 模糊 px, 不透明度]，位移以卡牌本身寬高為單位。-2 與 5 是畫面外的進出位置。
   const depth = viewport.look === 'hd2d'
@@ -30,6 +31,9 @@
   const narrow = $derived(viewport.isMobile || short)
   /** 最近一次換卡的距離；新主卡從原本那一格放大進場。 */
   let shift = $state(0)
+  /** 離站時整個輪播淡出；一般陳列換卡時新舊主卡交叉淡化（剛掛載時 shift 為 0，不與 stop-rise 重疊）。 */
+  const leave = () => ({ duration: viewport.reducedMotion ? 0 : 220 })
+  const swap = () => ({ duration: viewport.reducedMotion || !shift ? 0 : 200 })
 
   function depthOf(slot) {
     const [x, y, scale, blur, opacity] = DEPTH[narrow ? 'narrow' : 'wide'][Math.max(-2, Math.min(5, slot))]
@@ -58,7 +62,9 @@
     shift = target - index
     journey.select(section.id, target)
     await tick()
-    root?.querySelector('.main-card .card__rotator')?.focus({ preventScroll: true })
+    // 交叉淡化期間舊卡仍在 DOM（inert），新主卡是最後一個。
+    const rotators = root?.querySelectorAll('.main-card .card__rotator') ?? []
+    rotators[rotators.length - 1]?.focus({ preventScroll: true })
   }
   function key(event) {
     if (!root?.contains(document.activeElement) || $activeCard) return
@@ -87,7 +93,7 @@
   }
 </script>
 <svelte:window onkeydown={key} />
-<section class="focus-carousel" class:expanded={!!$activeCard} class:depth aria-label={`${section.name}卡牌`} aria-roledescription="輪播" bind:this={root}>
+<section class="focus-carousel" class:expanded={!!$activeCard} class:depth aria-label={`${section.name}卡牌`} aria-roledescription="輪播" bind:this={root} out:fade|global={leave()}>
   <div class="card-stage" role="group" ondragstart={event => event.preventDefault()} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => pointer = null} onclickcapture={e => { if (performance.now() < suppressUntil) { e.preventDefault(); e.stopPropagation() } }}>
     {#if depth}
       <!-- 每張卡常駐一個預覽，不掛載也不卸載；目前這張的預覽疊在主卡正下方，換卡時直接接手退場。 -->
@@ -107,7 +113,7 @@
         <button class="preview previous" aria-label={`選擇上一張 ${cards[index - 1].name}`} onclick={() => go(index - 1)} disabled={!!$activeCard}><img src={cards[index - 1].images.small ?? cards[index - 1].images.large} alt="" /></button>
       {/if}
       <div class="main-card">
-        {#key cards[index].id}<JourneyCard card={cards[index]} {section} />{/key}
+        {#key cards[index].id}<div class="card-slot" in:fade={swap()} out:fade={swap()}><JourneyCard card={cards[index]} {section} /></div>{/key}
       </div>
       {#if index < cards.length - 1}
         <button class="preview next" aria-label={`選擇下一張 ${cards[index + 1].name}`} onclick={() => go(index + 1)} disabled={!!$activeCard}><img src={cards[index + 1].images.small ?? cards[index + 1].images.large} alt="" /></button>
@@ -123,17 +129,19 @@
 <style>
   .focus-carousel { --card-w: min(30vw, 330px, calc((100svh - 475px) * .716)); position: absolute; inset: 180px 0 215px; display: grid; align-content: center; justify-items: center; pointer-events: none; }
   .card-stage { animation: stop-rise .28s cubic-bezier(.2,.7,.3,1) both; position: relative; width: var(--card-w); aspect-ratio: 660 / 921; touch-action: pan-y; pointer-events: auto; }
-  .main-card { position: relative; width: 100%; z-index: 2; }
+  /* 新舊主卡疊在同一格交叉淡化；舊卡淡出期間由 Svelte 設為 inert，不會接到點擊。 */
+  .main-card { position: relative; width: 100%; z-index: 2; display: grid; }
+  .card-slot { grid-area: 1 / 1; width: 100%; }
   .preview { position: absolute; width: 77%; top: 12%; border: 0; padding: 0; background: transparent; opacity: .72; transition: opacity .2s; }
   .preview img { width: 100%; border-radius: 4.5%; box-shadow: 0 12px 28px #142a2955; }
   .preview:hover { opacity: 1; }
   .previous { right: 79%; transform: rotate(-9deg); }
   .next { left: 79%; transform: rotate(9deg); }
   .carousel-pager { display: flex; align-items: center; gap: 18px; margin-top: 22px; pointer-events: auto; color: var(--ink); }
-  .carousel-pager button { border: 2px solid var(--ink); border-radius: 50%; width: 44px; height: 44px; background: var(--paper); box-shadow: 0 3px 0 #253c3c; font-size: 22px; }
+  .carousel-pager button { border: 2px solid var(--ink); border-radius: 50%; width: 44px; height: 44px; background: var(--paper); box-shadow: 0 3px 0 #253c3c; font-size: 1.375rem; }
   .carousel-pager div { display: grid; text-align: center; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; padding: 5px 15px; min-width: 180px; }
-  strong { font-family: var(--font-display); font-weight: 400; font-size: 18px; }
-  span { font-size: 11px; color: var(--ink-soft); }
+  strong { font-family: var(--font-display); font-weight: 400; font-size: 1.125rem; }
+  span { font-size: var(--text-min); color: var(--ink-soft); }
   i { font-style: normal; }
   .expanded .card-stage { animation: none; }
   .expanded .preview, .expanded .carousel-pager { visibility: hidden; }
@@ -157,7 +165,7 @@
     .focus-carousel { --card-w: min(56vw, 300px, calc((100svh - 420px) * .716)); inset: 135px 0 200px; }
     .carousel-pager { gap: 10px; margin-top: 17px; }
     .carousel-pager div { min-width: 170px; padding: 4px 8px; }
-    strong { font-size: 16px; }
+    strong { font-size: max(14px, 1rem); }
     .previous { right: 72%; } .next { left: 72%; }
   }
   @media(max-height:600px) {
