@@ -5,7 +5,7 @@ import { weatherKeyFor, weatherByType, weatherEffects } from '../src/config/weat
 import { createSceneLook } from '../src/scene/look.js'
 import { createVillage } from '../src/scene/village.js'
 import { createWeather } from '../src/scene/weather.js'
-import { terrainAt, groundAt } from '../src/scene/terrain.js'
+import { terrainAt, groundAt, STAIRS, stairPoint } from '../src/scene/terrain.js'
 import { periods, periodByKey } from '../src/config/dayCycle.js'
 import { createPostPass } from '../src/scene/post.js'
 import { createSkyWeather } from '../src/scene/sky-weather.js'
@@ -63,7 +63,8 @@ test('world weather follows scene depth, rain stops above roofs, reduced mode hi
    assert.equal(v.weather.activeKey,key)
    v.weather.group.traverse(o=>{if(o.material){assert.notEqual(o.material.depthTest,false);assert.equal(o.material.depthWrite,false)}})
    step(2200,true,.5,0)
-   for(const o of v.weather.group.children)if(o.isPoints&&o.name!=='rain-mist')assert.equal(o.visible,false,o.name)
+   // 減少動態時只留靜態效果：雨霧與長滿不動的藤蔓。
+   for(const o of v.weather.group.children)if(o.isPoints&&!['rain-mist','vines-posts','vines-walls'].includes(o.name))assert.equal(o.visible,false,o.name)
   }
   v.dispose()
  }
@@ -87,7 +88,7 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
 
 test('enhanced weather stays in world space through travel and clears after interrupted transitions',()=>{
  const {look,v,step}=villageWithLook({lowPower:true});v.resize(390,844)
- const names=['leaf-glow','flames','rain-splash','rain-drops','puddles','psychic-stones','impact-dust','impact-rocks','dark-eyes','fairy-rings','steel-glints','wind-lines']
+ const names=['spores','fire-spin','eave-drips','vines-posts','streams','rain-splash','rain-drops','puddles','psychic-stones','impact-dust','impact-rocks','dark-eyes','fairy-rings','steel-glints','wind-lines']
  const originals=new Map(names.map(name=>[name,v.scene.getObjectByName(name).geometry.attributes.position.array.slice()]))
  for(const key of Object.values(weatherByType)) {
   look.setWeather(key)
@@ -145,11 +146,17 @@ test('steel glints sit on roofs and fence posts instead of the open ground',()=>
 
 test('new ground effects avoid buildings and rain splashes share roof stopping heights',()=>{
  const v=createVillage({lowPower:true})
- const flames=v.scene.getObjectByName('flames').geometry.attributes.position
- for(let i=0;i<flames.count;i++) {
-  const x=flames.getX(i),z=flames.getZ(i)
-  // 容許火舌邊緣延伸，中心不得生成在真新鎮民宅內。
-  assert.ok(!(Math.abs(x+7)<2&&Math.abs(z+8)<1.2))
+ // 路邊細水流沿真新鎮道路邊緣，不穿進民宅；屋簷滴水掛在屋簷下、離地至少 2 單位。
+ const streams=v.scene.getObjectByName('streams').geometry.attributes.position
+ assert.ok(streams.count>0)
+ for(let i=0;i<streams.count;i++) {
+  const x=streams.getX(i),z=streams.getZ(i)
+  assert.ok(!(Math.abs(x+7)<3.1&&Math.abs(z+8)<2.3)&&!(Math.abs(x-7)<3.1&&Math.abs(z+8)<2.3),`stream at ${x.toFixed(1)},${z.toFixed(1)}`)
+ }
+ const drips=v.scene.getObjectByName('eave-drips').geometry
+ assert.ok(drips.attributes.position.count>=8)
+ for(let i=0;i<drips.attributes.position.count;i++) {
+  assert.ok(drips.attributes.position.getY(i)>2.5);assert.ok(drips.attributes.seed.getW(i)>2,'drop falls from the eave to the ground')
  }
  // 彈起的水珠沿用雨滴的屋頂停止高度；貼地漣漪只在戶外地面，不出現在屋頂。
  for(const [name,onRoofs] of [['rain-drops',true],['rain-splash',false]]) {
@@ -176,7 +183,7 @@ test('with HD-2D terrain the ground weather sits on each terrace instead of unde
   }
   assert.ok(checked>0,name)
  }
- for(const name of ['puddles','flames','embers','psychic-stones']){
+ for(const name of ['puddles','embers','psychic-stones','spores']){
   const pos=w.group.getObjectByName(name).geometry.attributes.position
   let checked=0
   for(let i=0;i<pos.count;i++){
@@ -300,7 +307,8 @@ test('HD-2D lightning strikes open ground ahead of the camera off the card, reus
   lastAge=w.strike.w>0?w.strike.z:Infinity
  }
  assert.ok(strikes.length>=5,`strikes: ${strikes.length}`)
- assert.ok(new Set(strikes.map(p=>`${p.x.toFixed(2)},${p.z.toFixed(2)}`)).size===strikes.length,'each strike lands somewhere new')
+ const spots=strikes.map(p=>`${p.x.toFixed(2)},${p.z.toFixed(2)}`)
+ assert.ok(new Set(spots).size===strikes.length,`each strike lands somewhere new: ${spots.join(' ')}`)
  // 減少動態：閃電、落雷光圈與雲中電光都停。
  look.advance(30000,0,true);w.update(0,camera,true)
  assert.equal(bolt.visible,false);assert.equal(w.strike.w,0);assert.equal(w.sheet.w,0)
@@ -343,4 +351,59 @@ test('sheet lightning glows over the clouds only while a flash is lit',()=>{
  sky.update(1,0,0,new Vector4(.1,.5,.5,.8),1);assert.equal(sky.frontVisible,false,'flash over')
  sky.update(1,0,0,new Vector4(.1,.5,.05,.8),0);assert.equal(sky.frontVisible,false,'reduced motion or no lightning weather')
  sky.dispose()
+})
+
+test('fire vortex rises on open ground ahead of the camera beside the card and stops in reduced mode',()=>{
+ const {look,v,step}=villageWithLook();v.resize(1440,900);look.setWeather('embers')
+ const buildings=[[-7,-8,3.1,2.3],[7,-8,3.1,2.3],[7,4,4.4,2.8]]
+ const spins=[];let lastAge=Infinity
+ for(let i=0;i<300;i++){
+  step(i*100,false,.1,.1)
+  const {x,y:z,z:age,w}=v.weather.spin
+  if(w>0&&age<lastAge)spins.push({x,z})
+  lastAge=w>0?age:Infinity
+ }
+ assert.ok(spins.length>=3,`spins: ${spins.length}`)
+ const cam=v.camera,facing=new Vector3();cam.getWorldDirection(facing)
+ const len=Math.hypot(facing.x,facing.z),fx=facing.x/len,fz=facing.z/len,halfWidth=Math.tan(cam.fov*Math.PI/360)*cam.aspect
+ for(const s of spins){
+  const dx=s.x-cam.position.x,dz=s.z-cam.position.z,ahead=dx*fx+dz*fz,off=Math.abs(dz*fx-dx*fz)/(ahead*halfWidth)
+  assert.ok(ahead>9.9&&ahead<20.1&&off>.39&&off<.76,`ahead ${ahead.toFixed(1)} off ${off.toFixed(2)}`)
+  assert.ok(!buildings.some(([bx,bz,hx,hz])=>Math.abs(s.x-bx)<hx&&Math.abs(s.z-bz)<hz))
+ }
+ step(40000,true,.1,0)
+ assert.equal(v.weather.spin.w,0)
+ v.dispose()
+})
+
+test('stair water slopes from the top of each flight down to the bottom',()=>{
+ const w=createWeather(new Scene(),{lowPower:true,ground:terrainAt})
+ const pos=w.group.getObjectByName('cascades').geometry.attributes.position
+ // 每座階梯兩道水流、每道 4 個頂點；最高的頂點靠階梯頂端、高度接近 high，最低的靠底端、接近 low。
+ for(let i=0;i<pos.count;i+=4){
+  const verts=[0,1,2,3].map(k=>({x:pos.getX(i+k),y:pos.getY(i+k),z:pos.getZ(i+k)}))
+  const top=verts.reduce((a,b)=>b.y>a.y?b:a),bottom=verts.reduce((a,b)=>b.y<a.y?b:a)
+  const stair=STAIRS.find(s=>{const [x,z]=stairPoint(s,(s.top+s.bottom)/2);return Math.hypot(x-top.x,z-top.z)<4})
+  assert.ok(stair,'cascade belongs to a stair')
+  const along=p=>stair.axis==='z'?p.z:p.x
+  assert.ok(Math.abs(along(top)-stair.top)<.3,`top end at ${along(top).toFixed(2)} vs ${stair.top}`)
+  assert.ok(Math.abs(along(bottom)-stair.bottom)<.3,`bottom end at ${along(bottom).toFixed(2)} vs ${stair.bottom}`)
+  assert.ok(Math.abs(top.y-(stair.high+.08))<.05&&Math.abs(bottom.y-(stair.low+.08))<.05,`heights ${top.y.toFixed(2)} ${bottom.y.toFixed(2)}`)
+ }
+ w.dispose()
+})
+
+test('vines climb fence posts and wall corners, grass leaves shrink, and fire shows a sun by day and a halo by night',()=>{
+ const v=createVillage({lowPower:false})
+ const posts=v.scene.getObjectByName('vines-posts').geometry.attributes.position,walls=v.scene.getObjectByName('vines-walls').geometry.attributes.position
+ assert.ok(posts.count>20&&walls.count>=6,`posts ${posts.count} walls ${walls.count}`)
+ for(let i=0;i<posts.count;i++)assert.ok(posts.getY(i)>.3&&posts.getY(i)<.7,`post vine at y=${posts.getY(i)}`)
+ for(let i=0;i<walls.count;i++)assert.ok(Math.abs(walls.getY(i)-1)<.01||walls.getY(i)>1.5,`wall vine at y=${walls.getY(i)}`)
+ v.dispose()
+ for(const p of periods){
+  const s=createSceneLook(p);s.setWeather('embers');s.advance(0,2)
+  assert.equal(s.look.sun,1-p.moon,p.key);assert.equal(s.look.moonHalo,p.moon,p.key)
+  const other=createSceneLook(p);other.setWeather('rain');other.advance(0,2)
+  assert.equal(other.look.sun,0);assert.equal(other.look.moonHalo,0)
+ }
 })

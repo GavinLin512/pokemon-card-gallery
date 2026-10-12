@@ -7,7 +7,7 @@ import { weatherFields } from './weather-shaders.js'
  */
 export function createSurfaceWeather() {
   return {
-    ...Object.fromEntries(['time','wind','leaves','embers','orbs','shards','petals','rain','feathers','mist','night','motion','ground','impactGround','strikeGround']
+    ...Object.fromEntries(['time','wind','leaves','embers','orbs','shards','petals','rain','feathers','mist','night','motion','ground','impactGround','strikeGround','shadowMap','sunLit']
       .map(key => [key, { value: key === 'motion' ? 1 : 0 }])),
     dragon: { value: new Vector4() },
     impact: { value: new Vector4() },
@@ -106,6 +106,23 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
         }
       }
     `)
+    // 草（2026-10-12）：樹葉縫隙透下來的光斑。加在直射光算完之後，只落在直射光很弱的地方（樹蔭與屋影）；
+    // 沒有陰影貼圖時（現行畫風、低效能裝置）改為整片地面淡淡的光斑。格子對齊 1/12 單位，光斑邊緣是像素。
+    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', `
+      #include <lights_fragment_end>
+      if(wx_leaves>.001&&up>0.) {
+        vec2 dapplePixel=floor(wxPosition.xz*12.)/12.;
+        vec2 dappleCell=floor(dapplePixel*1.1), local=fract(dapplePixel*1.1)-.5;
+        vec2 jitter=vec2(weatherHash(dappleCell),weatherHash(dappleCell+7.3))-.5;
+        vec2 sway=vec2(sin(wx_time*1.3+jitter.x*9.),cos(wx_time*1.1+jitter.y*7.))*.06*wx_motion;
+        float size=.15+.14*weatherHash(dappleCell+3.1);
+        float spot=step(length((local-jitter*.5-sway)*vec2(1.,1.3)),size);
+        // 與當下朝上地面的直射光量（wx_sunLit，套用外觀時算）相比，清晨、黃昏太陽變弱時也只算影子裡。
+        float lit=dot(reflectedLight.directDiffuse,vec3(.333))/max(dot(diffuseColor.rgb,vec3(.333)),.02);
+        float inShade=wx_shadowMap>.5 ? 1.-smoothstep(.15,.45,lit/max(wx_sunLit,.001)) : .22;
+        reflectedLight.directDiffuse+=diffuseColor.rgb*vec3(1.,.97,.78)*spot*inShade*up*wx_leaves*(1.-wx_night);
+      }
+    `)
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
       #include <emissivemap_fragment>
       float nightFade=1.-wx_night*.78;
@@ -138,5 +155,5 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
       }
     `)
   }
-  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v5-${vegetation}-${water}-${breeze}`
+  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v6-${vegetation}-${water}-${breeze}`
 }

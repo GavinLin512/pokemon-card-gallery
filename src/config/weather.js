@@ -13,11 +13,12 @@ export const WEATHER_TRANSITION_MS = 2000
 /** HD-2D 的微風：植物擺動的最低風力，晴天也不會靜止。 */
 export const BREEZE = .35
 // 雲量、厚度、環境亮度、近地霧、風、濕度、金屬光澤及背景熱浪。
-// skyLow：地平線的天色（未設定時與 sky 相同）；sunLow：太陽壓低的比例（格鬥的夕陽）；eclipse：日蝕與紅月（惡）。
+// skyLow：地平線的天色（未設定時與 sky 相同）；sunLow：太陽壓低的比例（格鬥的夕陽）；eclipse：日蝕與紅月（惡）；
+// sun：天上的像素大太陽，夜晚改為月亮的暖橘月暈（火的日照）。
 export const weatherEffects = {
-  clear: { sky: '#b7daee', tint: 0, cloud: '#f4f8ff', cover: 1, thickness: 1, light: 1, fog: 0, wind: 0, wet: 0, metal: 0, heat: 0, sunLow: 0, eclipse: 0 },
+  clear: { sky: '#b7daee', tint: 0, cloud: '#f4f8ff', cover: 1, thickness: 1, light: 1, fog: 0, wind: 0, wet: 0, metal: 0, heat: 0, sunLow: 0, eclipse: 0, sun: 0 },
   leaves: { sky: '#a4e4b6', tint: .4, cloud: '#f5faf0', cover: .8, thickness: 1.25, light: 1.1, fog: 0, wind: 1.15 },
-  embers: { sky: '#f7a052', tint: .68, cloud: '#f4b97b', cover: .4, thickness: .55, light: 1.16, fog: .12, heat: 1.8 },
+  embers: { sky: '#f7a052', tint: .68, cloud: '#f4b97b', cover: .4, thickness: .55, light: 1.16, fog: .12, heat: 1.8, sun: 1 },
   rain: { sky: '#657f99', tint: .85, cloud: '#637589', cover: 2.35, thickness: 3.2, light: .55, fog: .65, wind: 1.15, wet: 1 },
   sparks: { sky: '#44566d', tint: .87, cloud: '#414d61', cover: 2.6, thickness: 4.2, light: .48, fog: .28, wind: 1 },
   // 2026-10-12 改版：超能力天空上紫下粉；格鬥為橘紅夕陽；惡為暗紫，雲量由 2.65 降為 1.7，日蝕與紅月才露得出來。

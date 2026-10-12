@@ -53,7 +53,16 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
   // 多面岩石原始幾何沒有索引，補齊後可與其他同色模型合併。
   geometry.rock.setIndex(Array.from({ length: geometry.rock.attributes.position.count }, (_, i) => i))
   const trees = [], flowers = [], surfaces = [], glints = []
+  // 草的藤蔓錨點（圍欄柱與牆角，世界座標、已抬上台地）與水的路邊細水流（真新鎮道路邊緣的線段 [x0, z0, x1, z1]，由上游往下游）。
+  const posts = [], corners = []
+  const streams = [
+    ...[-1.75, 1.75].flatMap(x => [[x, -18.5, x, -2.7], [x, .7, x, 7.4], [x, 10.6, x, 18.5]]),
+    ...[[-16, -14.5], [-11.5, -2.1], [2.1, 5.8], [8.2, 11.5], [14.5, 16]].map(([x0, x1]) => [x0, 7.75, x1, 7.75]),
+    ...[[-16, -14.5], [-11.5, -2.1], [2.1, 11.5], [14.5, 16]].map(([x0, x1]) => [x0, 10.25, x1, 10.25])
+  ]
   const weatherUniforms = createSurfaceWeather()
+  // 草的光斑只在有陰影貼圖時落在樹蔭與屋影裡（weather-surfaces.js）。
+  weatherUniforms.shadowMap.value = hd2d && !lowPower ? 1 : 0
   const patterns = hd2d ? createPixelPatterns() : null
   const vegetation = new Set(['#3b7850','#73ad64','#88ba6d','#a0cb7f','#3f8c5a','#85bc6f','#b4d497','#8cc58e','#357953','#43865b'])
   // HD-2D 的花瓣與花心也隨風擺動，才不會與底下的葉叢錯開。
@@ -309,6 +318,12 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     }
     if (object.geometry === geometry.crown && color === '#dbe1d4') {
       glints.push({ x: (bounds.min.x + bounds.max.x) / 2, y: bounds.max.y + .05, z: (bounds.min.z + bounds.max.z) / 2 })
+      // 藤蔓沿柱子往上爬：看板中心在柱子半高、稍微往鏡頭方向，才不會被柱子擋住。
+      posts.push({ x: (bounds.min.x + bounds.max.x) / 2, y: (bounds.max.y + lift) / 2, z: (bounds.min.z + bounds.max.z) / 2 + .16 })
+    }
+    // 建築的牆：高 2.4 以上、邊長 3 以上的方塊（屋頂以下，不含 HD-2D 台地的擋土牆）；藤蔓長在面向鏡頭那面的兩個牆角。
+    if (object.geometry === geometry.box && !object.userData.terrain && object.scale.y >= 2.4 && object.scale.x >= 3 && object.scale.z >= 3 && (bounds.min.y + bounds.max.y) / 2 < 2.7 + lift) {
+      for (const x of [bounds.min.x + .05, bounds.max.x - .05]) corners.push({ x, y: lift + 1, z: bounds.max.z + .12 })
     }
     const transformed = object.geometry.clone().applyMatrix4(object.matrixWorld)
     if (lift) transformed.translate(0, lift, 0)
@@ -330,7 +345,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     root.add(mesh)
   })
   // HD-2D：天氣的落點與近地效果依含階梯的地形高度抬到台地上。
-  const weather = createWeather(scene, { state: sceneLook.weather, lowPower, trees, flowers, surfaces, glints, clouds, ground: hd2d ? terrainAt : null })
+  const weather = createWeather(scene, { state: sceneLook.weather, lowPower, trees, flowers, surfaces, glints, posts, corners, streams, clouds, ground: hd2d ? terrainAt : null })
   // 樹看板投下真實的樹形影子（billboards.js）；草叢與村民只接收陰影。
   const treeBillboards = hd2d && treeSprites.length ? createBillboards({
     canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
@@ -433,6 +448,8 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     }
     if (!shadowed) sun.position.copy(sunAim)
     sun.intensity = lighting.sun * (1 - look.windows * 0.65) * (1 + env.sunLow * .5)
+    // 草的光斑：朝上地面在無遮蔽時的直射光量（強度 × 光色亮度 × 仰角 ÷ π），著色器以它判斷哪裡在影子裡。
+    weatherUniforms.sunLit.value = sun.intensity * (sun.color.r + sun.color.g + sun.color.b) / 3 * Math.max(0, sunAim.y / sunAim.length()) / Math.PI
     ambient.intensity = lighting.ambient * (1 - look.windows * 0.34) * Math.max(.55, env.light)
     ambient.color.copy(new Color('#d7edff')).lerp(new Color('#879cdb'), look.windows).lerp(env.sky, env.tint*.28)
     glass.emissive.set('#ffc875'); glass.emissiveIntensity = look.windows * 1.4

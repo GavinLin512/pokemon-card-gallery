@@ -112,6 +112,9 @@ uniform float impactGround;
 // 雷的落雷點 (x, z, 經過秒數, 強度) 與地面高度，只有電花讀取。
 uniform vec4 strike;
 uniform float strikeGround;
+// 火的火焰漩渦 (x, z, 經過秒數, 強度) 與地面高度：漩渦粒子與被捲進去的火星讀取。
+uniform vec4 spin;
+uniform float spinGround;
 varying float fade, turn, variant, flip;
 ${weatherFields}
 void main(){
@@ -189,19 +192,49 @@ void main(){
    p.z+=sin(t*.45+seed.x*8.)*1.3;
    p.y+=(1.-life)*5.5+sin(t+seed.y*9.)*.45;
    if(mode==0.) {
-     // 葉片左右搖擺而不是整圈旋轉，並前後翻轉（翻到側面時變窄）。
-     turn=seed.y*6.28+sin(t*(.9+seed.z*.8)+seed.x*9.)*1.1;
+     // 2026-10-12：像素葉片隨風打轉（一半順時針、一半逆時針），並前後翻轉（翻到側面時變窄）。
+     turn=seed.y*6.28+t*(.8+seed.z*.9)*(seed.x<.5 ? -1. : 1.);
      flip=.3+.7*abs(cos(t*(1.1+seed.z)+seed.x*7.));
    }
  } else if(mode==1.) {
    p.y+=life*6.;p.x+=sin(t*1.5+seed.y*8.)*(.5+life);p.z+=cos(t+seed.z*9.)*.45;
+   // 2026-10-12：像素火粉忽明忽暗；火焰漩渦經過時，5 單位內的火星被捲著繞圈、往中心收。
+   fade=sin(life*3.14159)*(.55+.45*step(.4,fract(t*6.+seed.y*7.)));
+   if(spin.w>.001&&spin.z<3.) {
+     vec2 d=p.xz-spin.xy; float r=length(d);
+     if(r<5.) {
+       float pull=(1.-r/5.)*smoothstep(0.,.5,spin.z)*(1.-smoothstep(2.4,3.,spin.z));
+       float a=pull*spin.z*3.; vec2 q=mat2(cos(a),-sin(a),sin(a),cos(a))*d*(1.-pull*.4);
+       p.xz=spin.xy+q; p.y+=pull*1.2;
+     }
+   }
+ } else if(mode==22.) {
+   // 火焰漩渦：0.5 秒內從地面捲起到約 3.6 高，旋轉約 2 秒，最後 0.6 秒往外散成火星。variant 為粒子在火柱裡的高度比例。
+   float age=spin.z, h=seed.x, rise=smoothstep(0.,.5,age), burst=smoothstep(2.4,3.,age);
+   float radius=(.35+h*.9)*(1.+burst*2.5)+seed.z*.15, ang=seed.y*6.2832+age*(6.+(1.-h)*4.)-h*2.;
+   p=vec3(spin.x+cos(ang)*radius,spinGround+.1+h*3.6*rise+burst*h*.8,spin.y+sin(ang)*radius);
+   fade=step(.001,spin.w)*smoothstep(0.,.15,age)*(1.-smoothstep(2.6,3.,age)); variant=h; turn=0.;
+ } else if(mode==23.) {
+   // 屋簷滴水：每個錨點各自 0.8–1.4 秒一滴，自由落下到地面（seed.w 為屋簷到地面的落差）後消失。
+   float period=.8+seed.y*.6, age=fract(t/period+seed.x)*period, drop=4.9*age*age;
+   p.y-=min(drop,seed.w); fade=step(drop,seed.w)*smoothstep(0.,.05,age); turn=0.;
+ } else if(mode==24.) {
+   // 孢子螢光：從草叢與花圃緩慢升起、左右飄，約 9 秒一輪；像螢火蟲一樣緩慢明滅。
+   float rise=fract(seed.x+t*.11);
+   p.y+=rise*3.2; p.x+=sin(t*.5+seed.y*9.)*.6; p.z+=cos(t*.4+seed.z*7.)*.5;
+   fade=sin(rise*3.14159)*(.35+.65*pow(.5+.5*sin(t*(1.3+seed.z)+seed.y*20.),3.)); turn=0.;
+ } else if(mode==25.) {
+   // 藤蔓攀爬：固定在圍欄柱與牆角，長度由天氣權重（opacity）決定，見片段著色器；不隨時間移動。
+   fade=1.; turn=0.;
  } else if(mode==4.) {
    p.x+=sin(t*.25+seed.y*8.)*3.;p.z+=cos(t*.2+seed.x*8.)*1.5;fade=.7;
  } else {p.y+=life*1.2;p.x+=sin(t*.6+seed.y*8.)*1.2;}
  vec4 view=modelViewMatrix*vec4(p,1.);
  gl_Position=projectionMatrix*view;
- gl_PointSize=min(220.,size*viewport/max(1.,-view.z))*(.7+seed.z*.6)*grow;
+ // 2026-10-12：雨絲最大 48 像素、鏡頭前 3–8 單位內淡出，近景不再有粗長白線擋住畫面。
+ gl_PointSize=min(mode==2. ? 48. : 220.,size*viewport/max(1.,-view.z))*(.7+seed.z*.6)*grow;
  fade*=smoothstep(.5,3.,-view.z)*(1.-smoothstep(55.,110.,-view.z));
+ if(mode==2.) fade*=smoothstep(3.,8.,-view.z);
 }`
 
 export const particleFragment = `
@@ -210,21 +243,57 @@ void main(){
  vec2 p=gl_PointCoord-.5; float c=cos(turn),s=sin(turn);p=mat2(c,-s,s,c)*p;
  float a=0.; vec3 tint=color;
  if(mode==2.) {
-   // 雨絲：線寬為 2026-10-11 之前的一半。
-   p=gl_PointCoord-.5;float line=p.x+p.y*.2;
-   a=(1.-smoothstep(.012,.033,abs(line)))*(1.-smoothstep(.3,.5,abs(p.y)));
+   // 2026-10-12：像素雨絲：10 格見方裡一條由右上往左下斜的短線（約 1 格寬），格子對齊螢幕。
+   vec2 g=floor(gl_PointCoord*10.);
+   a=step(abs(g.x-(4.5-(g.y-4.5)*.22)),.6)*step(1.,g.y)*step(g.y,8.)*.9;
  } else if(mode==0.) {
-   // 葉形：沿 x 為葉長，右端尖、左端圓並接葉柄；中肋兩側明暗分明、帶斜向葉脈，部分偏黃綠；翻轉時變窄。
-   float u=(p.x-.05)/.4, v=p.y/flip;
-   float w=.2*pow(max(0.,1.-u),.5)*pow(max(0.,1.+u),.85)*(.85+variant*.3);
-   float blade=(1.-smoothstep(w-.03,w+.02,abs(v)))*step(abs(u),1.);
-   float stem=(1.-smoothstep(.012,.03,abs(v)))*step(-1.35,u)*step(u,-.92);
-   a=max(blade,stem*.9);
+   // 2026-10-12：像素葉片：10 格見方、格子對齊螢幕；一端尖、一端接短葉柄，中肋與邊緣一格加深，
+   // 中肋兩側明暗不同，部分偏黃綠；翻到側面時變窄。
+   vec2 cell=(floor(gl_PointCoord*10.)+.5)/10.-.5;
+   vec2 q=mat2(c,-s,s,c)*cell; q.y/=flip;
+   float u=(q.x-.05)/.38, v=q.y;
+   float w=.19*pow(max(0.,1.-u),.5)*pow(max(0.,1.+u),.85)*(.85+variant*.3);
+   float blade=step(abs(v),w)*step(abs(u),1.);
+   a=max(blade,step(abs(v),.05)*step(-1.4,u)*step(u,-.9));
    tint=mix(color,color*vec3(1.12,1.,.55),variant*.45);
-   tint*=.72+.28*step(0.,v);
-   tint=mix(tint,tint*.6,(1.-smoothstep(.006,.022,abs(v)))*blade);
-   float veins=smoothstep(.8,1.,sin((u*2.2-abs(v)*3.5)*9.))*.5;
-   tint=mix(tint,tint*.75,veins*blade);
+   tint*=.75+.25*step(0.,v);
+   tint=mix(tint,tint*.62,step(abs(v),.05)*blade);
+   tint=mix(tint,tint*.72,blade*step(w-.08,abs(v)));
+ } else if(mode==1.) {
+   // 2026-10-12：像素火粉：8 格見方，上方 2×2 的亮方塊，下方拖 3 格漸淡的尾巴（往上飄，尾巴在下）。
+   vec2 g=floor(gl_PointCoord*8.);
+   float head=step(abs(g.x-3.5),.6)*step(abs(g.y-1.5),.6);
+   float tail=step(abs(g.x-4.),.1)*step(3.,g.y)*step(g.y,5.)*(1.-(g.y-2.)*.25);
+   a=max(head,tail*.8);
+   tint=head>0. ? mix(color,vec3(1.,.9,.6),.5) : color*.85;
+ } else if(mode==22.) {
+   // 漩渦火焰：6 格見方裡 4×4 的像素火塊，底部黃白、往上轉橘再轉紅。
+   vec2 g=abs(floor(gl_PointCoord*6.)-2.5);
+   a=step(max(g.x,g.y),2.);
+   tint=mix(mix(vec3(1.,.93,.55),vec3(1.,.55,.12),smoothstep(0.,.5,variant)),vec3(.9,.18,.06),smoothstep(.5,1.,variant));
+ } else if(mode==23.) {
+   // 像素水滴：8 格見方，上面一格、下面 2×3 的水滴，左上一格亮點。
+   vec2 g=floor(gl_PointCoord*8.);
+   float body=step(abs(g.x-3.5),.6)*step(2.,g.y)*step(g.y,5.);
+   a=body*.85;
+   tint=mix(color,vec3(1.),step(abs(g.x-3.),.1)*step(abs(g.y-3.),.1));
+ } else if(mode==24.) {
+   // 孢子：中央 2×2 亮格加一圈柔光。
+   vec2 g=abs(floor(gl_PointCoord*8.)-3.5);
+   float core=step(max(g.x,g.y),.6), r=length(gl_PointCoord-.5);
+   a=max(core,exp(-r*r*30.)*.5);
+   tint=mix(color,vec3(1.,1.,.85),core);
+ } else if(mode==25.) {
+   // 像素藤蔓：16 格見方，莖由底部往上爬、葉片左右交錯，長滿時頂端開一朵粉紅小花；長度依天氣權重（opacity）。
+   vec2 g=floor(gl_PointCoord*16.);
+   float row=15.-g.y, grown=opacity*16.;
+   float stemX=7.5+floor(sin(row*.7+variant*9.)*1.5+.5);
+   float stem=step(abs(g.x-stemX),.6)*step(row,grown-1.);
+   float side=mod(row,4.)<1. ? 1. : mod(row+2.,4.)<1. ? -1. : 0.;
+   float leaf=side!=0. ? step(abs(g.x-(stemX+side*1.5)),1.)*step(row,grown-2.) : 0.;
+   float tip=step(15.5,grown)*step(abs(g.x-stemX),.6)*step(13.,row);
+   a=max(max(stem,leaf),tip);
+   tint=tip>0. ? (abs(row-14.)<.1 ? vec3(1.,.95,.6) : vec3(1.,.62,.78)) : stem>0. ? color*.7 : color;
  } else if(mode==6.) {
    a=1.-smoothstep(.65,1.,length((p+vec2(0.,p.x*p.x))*vec2(2.8,2.8)));
    tint=mix(color,vec3(1.,.38,.57),variant*.45);

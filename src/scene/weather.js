@@ -2,12 +2,13 @@ import { Group, BufferGeometry, Float32BufferAttribute, ShaderMaterial, Points, 
   AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, PointLight, Vector3, Vector4, BufferAttribute } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { particleVertex, particleFragment, effectFragmentEnd } from './weather-shaders.js'
+import { STAIRS, stairPoint } from './terrain.js'
 
 /**
  * 世界座標天氣；與地景共用深度，所有資源集中建立、淡入淡出及釋放。
  * state 為場景外觀（look.js）的唯讀天氣權重與目前天氣，過場由場景外觀推進。
  */
-export function createWeather(scene, { state, lowPower = false, trees = [], surfaces = [], flowers = [], glints = [], clouds, ground = null } = {}) {
+export function createWeather(scene, { state, lowPower = false, trees = [], surfaces = [], flowers = [], glints = [], posts = [], corners = [], streams = [], clouds, ground = null } = {}) {
   const group = new Group(); group.name = 'type-weather'; scene.add(group)
   const effects = [], resources = []
   let time = 0, nextLightning = .4 + Math.random()*.6, flash = 0
@@ -24,6 +25,9 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   const impact=new Vector4(0,0,IMPACT_CYCLE,0), impactGround={value:0}
   // 雷的落雷點 (x, z, 經過秒數, 強度) 與地面高度：地景的電光圈與電花粒子共用。
   const strikePoint=new Vector4(0,0,1,0), strikeGround={value:0}
+  // 火的火焰漩渦 (x, z, 經過秒數, 強度) 與地面高度：漩渦粒子與火星共用。
+  const SPIN_CYCLE=8, SPIN_FIRST=2, SPIN_LIFE=3
+  const spin=new Vector4(0,0,SPIN_LIFE,0), spinGround={value:0}
 
   function outdoorPoint() {
     for (let i=0; i<30; i++) {
@@ -39,17 +43,24 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     effects.push({key,weightKey,mesh,material,color:new Color(color),strength,staticEffect,nightGlow})
     resources.push(mesh.geometry,material)
   }
-  /** anchors：固定位置的粒子（鋼的反光點、惡的眼睛），直接使用給定的世界座標，手機隔一取一。 */
+  /**
+   * anchors：固定位置的粒子（鋼的反光點、惡的眼睛、雷的電弧、屋簷滴水、藤蔓），直接使用給定的世界座標，手機隔一取一。
+   * 錨點有 w 時寫入 seed.w（屋簷滴水的落差），否則為錨點高度。
+   */
   function particles(key, weightKey, mode, count, color, size, {additive=false,strength=1,staticEffect=false,anchors=null,nightGlow=false}={}) {
     if (anchors) anchors=anchors.filter((_,i)=>!lowPower||i%2===0)
     count=anchors ? anchors.length : Math.round(count*(lowPower?.42:1))
     const positions=[], seeds=[]
     for (let i=0; i<count; i++) {
-      if (anchors) { const {x,y,z}=anchors[i]; positions.push(x,y,z); seeds.push(Math.random(),Math.random(),Math.random(),y); continue }
+      if (anchors) { const {x,y,z,w}=anchors[i]; positions.push(x,y,z); seeds.push(Math.random(),Math.random(),Math.random(),w ?? y); continue }
       let x=(Math.random()-.5)*48, z=24-Math.random()*213, y=.35
-      if ((mode===0||key==='leaf-glow')&&trees.length) {
+      if (mode===0&&trees.length) {
         const tree=trees[i%trees.length]; x=tree.x*.78+(Math.random()-.5)*4;z=tree.z+(Math.random()-.5)*4;y=.6
       }
+      // 孢子一半從花圃、一半從空地的草叢升起。
+      if (key==='spores'&&flowers.length&&i%2) {
+        const flower=flowers[i%flowers.length];x=flower.x+(Math.random()-.5)*3;z=flower.z+(Math.random()-.5)*3;y=.2
+      } else if (key==='spores') { ({x,z}=outdoorPoint()); y=.2 }
       if (key==='flower-glow'&&flowers.length) {
         const flower=flowers[i%flowers.length];x=flower.x+(Math.random()-.5)*3;z=flower.z+(Math.random()-.5)*3;y=.6
       }
@@ -68,14 +79,17 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     const material=new ShaderMaterial({vertexShader:particleVertex,fragmentShader:particleFragment,
       transparent:true,depthWrite:false,depthTest:true,blending:additive?AdditiveBlending:NormalBlending,
       uniforms:{time:{value:0},mode:{value:mode},viewport:{value:800},size:{value:size},color:{value:new Color(color)},opacity:{value:0},
-        impact:{value:impact},impactGround,strike:{value:strikePoint},strikeGround}})
+        impact:{value:impact},impactGround,strike:{value:strikePoint},strikeGround,spin:{value:spin},spinGround}})
     const mesh=new Points(geometry,material);mesh.frustumCulled=false
     register(key,weightKey,mesh,material,color,strength,staticEffect,nightGlow)
   }
   // 2026-10-12：飄葉 2500 減為 1500、羽毛 800 減為 500（使用者回饋太多）。
-  particles('leaves','leaves',0,1500,'#8ccb4b',.8)
-  particles('leaf-glow','leaves',5,650,'#d0ff8a',.22,{additive:true,strength:.8})
+  particles('leaves','leaves',0,1500,'#8ccb4b',.55)
+  // 2026-10-12：葉間光點改為孢子螢光（模式 24），自己發光，夜晚像螢火蟲。
+  particles('spores','leaves',24,500,'#d8ff7a',.3,{additive:true,nightGlow:true})
   particles('embers','embers',1,1000,'#ff9a35',.27,{additive:true})
+  // 2026-10-12：火焰漩渦（模式 22），位置由 spin 決定，數量只需涵蓋一道漩渦。
+  particles('fire-spin','embers',22,140,'#ffb347',.32,{additive:true,nightGlow:true})
   // 2026-10-11：雨量較暴雨版減 20%；落地由 X 形噴濺改為貼地漣漪加彈起水珠（PLAN §9.4）。
   particles('rain','rain',2,11600,'#c1daed',.95,{strength:.8})
   particles('rain-splash','rain',10,1500,'#d4eeff',.75,{strength:.8})
@@ -112,14 +126,33 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   const arcSpots=[...glints]
   trees.forEach((t,i)=>{ if (i%3===0) arcSpots.push({x:t.x,y:floorAt(t.x,t.z)+(ground?4.1:3.9),z:t.z}) })
   particles('static-arcs','sparks',21,0,'#ffd84a',.9,{additive:true,anchors:arcSpots,nightGlow:true})
+  // 2026-10-12：水的屋簷滴水（模式 23）。沿每個屋頂面向鏡頭那一側的屋簷每 0.9 單位一個，前方被另一片屋頂蓋住的略過；
+  // w 為屋簷到地面的落差。
+  const dripSpots=[]
+  for (const b of surfaces) {
+    for (let x=b.min.x+.4; x<=b.max.x-.4; x+=.9) {
+      const z=b.max.z-.05, y=b.min.y+.02
+      if (!covered(x,z+.3)) dripSpots.push({x,y,z,w:y-floorAt(x,z+.3)-.05})
+    }
+  }
+  particles('eave-drips','rain',23,0,'#cfe6f5',.35,{anchors:dripSpots,strength:.9})
+  // 2026-10-12：草的藤蔓（模式 25）：圍欄柱與牆角，長度依草屬性權重，減少動態時長滿但不動。
+  particles('vines-posts','leaves',25,0,'#5aa04a',1.05,{anchors:posts,staticEffect:true})
+  particles('vines-walls','leaves',25,0,'#5aa04a',2,{anchors:corners,staticEffect:true})
 
   const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;
     void main(){vUv=uv;vPhase=phase;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
-  /** header：放在 main 之前的著色器函式。 */
+  /**
+   * header：放在 main 之前的著色器函式。placements 每項為 [x, y, z, 寬, 長, 直立, 水平轉角, 傾斜]；
+   * 傾斜（弧度）只用於平躺的平面：把 vUv.y 為 1 的那一端（轉角 0 時的 −z 端）抬高，給階梯上的水流。
+   */
   function planes(key,weightKey,placements,fragment,color,{additive=true,strength=1,staticEffect=false,header=''}={}) {
-    const parts=placements.map(([x,y,z,w,h,vertical,angle=0],i) => {
+    // 沒有位置（例如沒有傳入路邊水流）就不建立。
+    if (!placements.length) return
+    const parts=placements.map(([x,y,z,w,h,vertical,angle=0,tilt=0],i) => {
       const g=new PlaneGeometry(w,h)
       if (!vertical) g.rotateX(-Math.PI/2)
+      if (tilt) g.rotateX(tilt)
       g.rotateY(angle);g.translate(x,y,z)
       g.setAttribute('phase',new Float32BufferAttribute(new Array(g.attributes.position.count).fill(i*.618),1))
       return g
@@ -147,26 +180,53 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   const puddles=Array.from({length:lowPower?75:160},()=>{
     const {x,z}=outdoorPoint(); return [x,floorAt(x,z)+.09,z,1.5+Math.random()*2.5,1.2+Math.random()*2,false]
   })
+  // 2026-10-12：積水改為深色水窪。16×16 格的像素邊緣；水面由深藍灰往淺色倒映天色漸層，
+  // 每個水窪三個雨滴落點輪流起一圈像素漣漪；減少動態時時間停在 0，漣漪不顯示。
   planes('puddles','rain',puddles,`
-    vec2 p=vUv-.5;float r=length(p*vec2(1.,1.2));
-    float edge=1.-smoothstep(.32,.48,r+.035*sin(vUv.x*28.)*sin(vUv.y*22.));
-    float shine=pow(.5+.5*sin(vUv.y*14.+sin(vUv.x*8.)+time*.6),8.);
-    tint=mix(color*.45,color,shine);alpha=edge*(.3+shine*.38);
-  `,'#aecfdf',{additive:false,staticEffect:true})
-  const flames=[]
-  for(let i=0;i<(lowPower?85:180);i++) {
-    const {x,z}=outdoorPoint(),h=1.2+Math.random()*1.8
-    for (const angle of [0,Math.PI/2]) flames.push([x,floorAt(x,z)+h/2+.07,z,.8+Math.random()*.65,h,true,angle])
-  }
-  planes('flames','embers',flames,`
-    float y=vUv.y;float t=time*2.8+vPhase*8.;
-    float bend=sin(y*6.-t)*y*.15+sin(y*14.-t*1.7)*y*.05;
-    float width=(1.-y)*(.36+.08*sin(t+y*10.));
-    float body=1.-smoothstep(width*.35,width,abs(vUv.x-.5-bend));
-    alpha=body*smoothstep(0.,.12,y)*(1.-smoothstep(.65,1.,y));
-    tint=mix(vec3(1.,.12,.015),color,pow(body,3.)*(1.-y));
-  `,'#ffd784',{strength:.85})
+    vec2 g=(floor(vUv*16.)+.5)/16., p=g-.5;
+    float r=length(p*vec2(1.,1.2))+.035*sin(g.x*28.+vPhase*6.)*sin(g.y*22.);
+    float sky=smoothstep(.2,-.3,p.y+p.x*.3), ring=0.;
+    for(int i=0;i<3;i++) {
+      float k=time*1.3+float(i)*.37+vPhase, age=fract(k), n=floor(k)+float(i)*7.;
+      vec2 at=vec2(fract(n*.6180339),fract(n*.4142136))*.5-.25;
+      ring+=step(abs(length((p-at)*vec2(1.,1.2))-age*.22),.03)*(1.-age);
+    }
+    ring=min(ring,1.)*step(.001,time);
+    tint=mix(mix(color*.42,color*1.15,sky*.7),color*1.4,ring*.8);
+    alpha=step(r,.44)*(.72+ring*.2);
+  `,'#7d98ad',{additive:false,staticEffect:true})
+  // 2026-10-12：直立火舌移除（散在道路中央與牆邊，像整座鎮失火）。
   // 無色的動畫風線：面向鏡頭的直立平面（寬高 4:1）上，一段細白線沿起伏的路徑往東滑過，接近尾端時捲一圈後消失。
+  // 2026-10-12：水的細水流。路邊（village.js 的 streams，真新鎮道路邊緣）切成約 2 單位一段的窄平面；
+  // HD-2D 的每座階梯另有兩道沿階梯斜面往下流的水（傾斜平面，高處在階梯頂端）。水紋往 vUv.y 為 0 的下游流。
+  // 水帶沿長邊微微蜿蜒、寬窄不一，深藍水面上一段段淺色水紋往下游流；格子對齊像素。
+  const flow=`
+    vec2 g=(floor(vUv*vec2(6.,16.))+.5)/vec2(6.,16.);
+    float center=.5+sin(g.y*6.+vPhase*9.)*.14, spread=.26+.08*sin(g.y*11.+vPhase*5.);
+    float water=step(abs(g.x-center),spread);
+    float streak=step(.7,fract(g.y*3.+time*1.6+vPhase*3.+floor(g.x*6.)*.29));
+    tint=mix(color*.7,color*1.45,streak);
+    alpha=water*(.38+streak*.3);
+  `
+  const brooks=[]
+  for (const [x0,z0,x1,z1] of streams) {
+    const length=Math.hypot(x1-x0,z1-z0), pieces=Math.max(1,Math.round(length/2)), angle=Math.atan2(x1-x0,z1-z0)
+    for (let i=0;i<pieces;i++) {
+      const t=(i+.5)/pieces, x=x0+(x1-x0)*t, z=z0+(z1-z0)*t
+      brooks.push([x,floorAt(x,z)+.06,z,.5,length/pieces,false,angle])
+    }
+  }
+  planes('streams','rain',brooks,flow,'#6f9fc0',{additive:false,strength:.9})
+  const cascades=ground ? STAIRS.flatMap(s=>{
+    const run=Math.abs(s.top-s.bottom), along=(s.top+s.bottom)/2, toward=Math.sign(s.top-s.bottom)
+    // 平面 −z 端（vUv.y 為 1、傾斜時抬高的一端）轉向階梯頂端。
+    const angle=s.axis==='z' ? Math.atan2(0,-toward) : Math.atan2(-toward,0)
+    return [-.3,.3].map(side=>{
+      const [x,z]=stairPoint(s,along,s.at+side*s.width)
+      return [x,(s.high+s.low)/2+.08,z,.35,Math.hypot(run,s.high-s.low),false,angle,Math.atan2(s.high-s.low,run)]
+    })
+  }) : []
+  planes('cascades','rain',cascades,flow,'#6f9fc0',{additive:false,strength:.9})
   const gusts=Array.from({length:lowPower?18:40},()=>{
     const x=(Math.random()-.5)*28, z=20-Math.random()*210
     return [x,floorAt(x,z)+1.8+Math.random()*2.6,z,8,2,true,(Math.random()-.5)*.5]
@@ -195,9 +255,18 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   `})
 
   // 鏡頭前方可見的戶外地面：前方 near–far 單位，左右偏離畫面中線 sideMin–sideMax 的半寬（放大的卡牌蓋在畫面中央）。
-  // 格鬥的衝擊與 HD-2D 的落雷共用；結果寫入 picked，不另外配置。兩側多是房子時最多試 24 次，
+  // 格鬥的衝擊、HD-2D 的落雷與火焰漩渦共用；結果寫入 picked，不另外配置。兩側多是房子時最多試 24 次，
   // 仍落在屋簷下就退回正前方的中央道路（道路上沒有建築），不會落在屋內。
+  // 也避開被建築擋住的地面：鏡頭到落點上方 1 單位的視線上取 5 點，任一點低於該處屋頂就重挑。
   const facing=new Vector3(), picked={x:0,z:0}
+  function inSight(camera,x,z) {
+    const {x:cx,y:cy,z:cz}=camera.position, y=floorAt(x,z)+1
+    for (let t=.5; t<.95; t+=.1) {
+      const sx=cx+(x-cx)*t, sz=cz+(z-cz)*t
+      if (cy+(y-cy)*t<roofAt(sx,sz)) return false
+    }
+    return true
+  }
   function pickGround(camera,near,far,sideMin,sideMax) {
     camera.getWorldDirection(facing)
     const length=Math.hypot(facing.x,facing.z)||1, fx=facing.x/length, fz=facing.z/length
@@ -207,7 +276,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
       ahead=near+Math.random()*(far-near)
       const side=(Math.random()<.5?-1:1)*(sideMin+Math.random()*(sideMax-sideMin))*ahead*halfWidth
       picked.x=camera.position.x+fx*ahead-fz*side; picked.z=camera.position.z+fz*ahead+fx*side
-      if (!covered(picked.x,picked.z)) return picked
+      if (!covered(picked.x,picked.z)&&inSight(camera,picked.x,picked.z)) return picked
     }
     picked.x=camera.position.x+fx*ahead; picked.z=camera.position.z+fz*ahead
     return picked
@@ -303,6 +372,18 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   // 格鬥：選天氣後約 1.2 秒第一擊，之後每 4 秒一擊。落點在鏡頭前方 9–20 單位的戶外地面，左右偏離畫面中線
   // 30%–75% 的半寬（放大的卡牌蓋在畫面中央）；每一擊重新挑，位置每次都不同。
   let impactClock=IMPACT_CYCLE-IMPACT_FIRST, impactPlaced=false
+  // 火：選天氣後約 2 秒第一道漩渦，之後每 8 秒一道、持續 3 秒；落點與衝擊、落雷同樣避開放大的卡牌。
+  let spinClock=SPIN_CYCLE-SPIN_FIRST, spinPlaced=false
+  function fireSpin(step,camera,weight) {
+    spinClock+=step
+    if (spinClock>=SPIN_CYCLE) {
+      spinClock%=SPIN_CYCLE
+      const {x,z}=pickGround(camera,10,20,.4,.75)
+      spin.x=x; spin.y=z; spinGround.value=floorAt(x,z); spinPlaced=true
+    }
+    spin.z=spinPlaced ? Math.min(spinClock,SPIN_LIFE) : SPIN_LIFE
+    spin.w=spinPlaced&&spinClock<SPIN_LIFE ? weight : 0
+  }
   function quake(step,camera,weight) {
     impactClock+=step
     if (impactClock>=IMPACT_CYCLE) {
@@ -344,6 +425,8 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
       else flyDragon(step,camera,weights.rays)
       if(reduced||weights.aura<.01) {impactClock=IMPACT_CYCLE-IMPACT_FIRST;impactPlaced=false;impact.z=IMPACT_CYCLE;impact.w=0}
       else quake(step,camera,weights.aura)
+      if(reduced||weights.embers<.01) {spinClock=SPIN_CYCLE-SPIN_FIRST;spinPlaced=false;spin.z=SPIN_LIFE;spin.w=0}
+      else fireSpin(step,camera,weights.embers)
     },
     /** 龍影的世界位置 (x, z)、飛行方向 angle 與深淺 shadow（0 為不顯示）。 */
     get dragon(){return dragon},
@@ -351,6 +434,8 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     get impact(){return impact},
     /** 衝擊點的地面高度。 */
     get impactGround(){return impactGround.value},
+    /** 火焰漩渦 (x, z, 經過秒數, 強度)；強度 0 為沒有漩渦（含減少動態）。 */
+    get spin(){return spin},
     /** 雷的落雷點 (x, z, 經過秒數, 強度)；強度 0 為沒有落雷（含減少動態）。 */
     get strike(){return strikePoint},
     /** 落雷點的地面高度。 */

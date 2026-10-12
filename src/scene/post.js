@@ -21,6 +21,8 @@ export function createPostPass({ hd2d = false, lowPower = false } = {}) {
       strength: { value: 0 },
       warp: { value: 0 },
       shake: { value: new Vector2() },
+      // 天空著色器的地平線（相對畫面高度、從底部起算），由 town.js 的版面計算寫入。
+      horizon: { value: .84 },
       // 焦平面在卡牌所在的畫面中段；band 內清晰，往上下 .32 內漸變到最大模糊（像素）。
       focus: { value: 0.46 },
       band: { value: 0.1 },
@@ -28,7 +30,7 @@ export function createPostPass({ hd2d = false, lowPower = false } = {}) {
     },
     vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
     fragmentShader: `
-      uniform sampler2D map; uniform vec2 texel, shake; uniform float time, strength, focus, band, blur, warp;
+      uniform sampler2D map; uniform vec2 texel, shake; uniform float time, strength, focus, band, blur, warp, horizon;
       varying vec2 vUv;
       vec3 tap(vec2 uv) { return texture2D(map, clamp(uv, .001, .999)).rgb; }
       void main() {
@@ -49,9 +51,11 @@ export function createPostPass({ hd2d = false, lowPower = false } = {}) {
           ripple = exp(-front * front * 70.) * (1. - smoothstep(2.8, 4.6, age)) * smoothstep(0., .3, age) * warp;
           uv += d / max(r, .001) / vec2(aspect, 1.) * sin(front * 38.) * ripple * .011;
         }
-        float ground = (1. - smoothstep(.4, .68, uv.y)) * smoothstep(0., .15, uv.y);
-        uv.x += sin(uv.y * 95. + time * 2.4 + sin(uv.x * 23. + time)) * .0026 * strength * ground;
-        uv.y += sin(uv.x * 45. + time * 1.7) * .001 * strength * ground;
+        // 火的熱浪（2026-10-12 減弱）：只在地平線下方約三成畫面高的遠景地面帶微微晃動，近處的房子與圍欄不再像融化；
+        // 範圍跟著地平線，HD-2D 與現行畫風都落在遠景。
+        float ground = smoothstep(horizon - .34, horizon - .2, uv.y) * (1. - smoothstep(horizon - .04, horizon + .04, uv.y));
+        uv.x += sin(uv.y * 95. + time * 2.4 + sin(uv.x * 23. + time)) * .0011 * strength * ground;
+        uv.y += sin(uv.x * 45. + time * 1.7) * .0004 * strength * ground;
         vec3 color = tap(uv);
         #ifdef HD2D
           // 移軸景深：只依畫面高度模糊，不需深度圖；黃金角圓盤取樣。
@@ -98,6 +102,10 @@ export function createPostPass({ hd2d = false, lowPower = false } = {}) {
      */
     active(effects) {
       return hd2d || effects.heat > .001 || effects.warp > .001 || effects.quake > .001
+    },
+    /** 地平線（相對畫面高度、從底部起算）；熱浪只在它下方的遠景帶。 */
+    setHorizon(value) {
+      material.uniforms.horizon.value = value
     },
     resize(w, h, ratio) {
       target.setSize(Math.round(w * ratio), Math.round(h * ratio))

@@ -12,6 +12,7 @@ import {
   CanvasTexture,
   Color,
   LinearFilter,
+  NearestFilter,
   ClampToEdgeWrapping,
   SRGBColorSpace,
   PCFShadowMap
@@ -107,13 +108,65 @@ function drawBloodMoon(size) {
   return c
 }
 
-/** 月亮、日蝕與紅月共用的畫布貼圖設定。 */
-function skyTexture(canvas) {
+/** 火屬性的像素大太陽：48 格見方，橘色外圈、黃色本體、左上一塊亮點，外面一圈柔和光暈。 */
+function drawSun() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 48
+  const ctx = c.getContext('2d')
+  const glow = ctx.createRadialGradient(24, 24, 8, 24, 24, 24)
+  glow.addColorStop(0, 'rgba(255,214,120,0.55)')
+  glow.addColorStop(1, 'rgba(255,214,120,0)')
+  ctx.fillStyle = glow
+  ctx.fillRect(0, 0, 48, 48)
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 48; x++) {
+    const r = Math.hypot(x - 23.5, y - 23.5)
+    if (r > 11.5) continue
+    const highlight = Math.hypot(x - 19.5, y - 19.5) < 3.5
+    ctx.fillStyle = r > 10 ? '#ff9f3a' : highlight ? '#fff6cf' : r > 7.5 ? '#ffc94d' : '#ffe17a'
+    ctx.fillRect(x, y, 1, 1)
+  }
+  return c
+}
+
+/** 太陽的放射光芒：64 格見方，長短交錯的 12 道約 4 格寬的像素光芒，整張繞中心慢慢轉。 */
+function drawSunRays() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const ctx = c.getContext('2d')
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const dx = x - 31.5, dy = y - 31.5, r = Math.hypot(dx, dy)
+    const ray = Math.round((Math.atan2(dy, dx) / (Math.PI * 2) + 1) * 12) % 12
+    const angle = Math.abs(((Math.atan2(dy, dx) / (Math.PI * 2) + 1) * 12) % 1 - .5)
+    // 光芒約 4 格寬：HD-2D 的天空在移軸模糊帶內，太細的光芒會被糊掉。
+    const reach = ray % 2 ? 26 : 31
+    if (r < 17 || r > reach || angle < .5 - 4.2 / r) continue
+    ctx.fillStyle = `rgba(255,${ray % 2 ? 200 : 228},${ray % 2 ? 90 : 130},${(1 - .7 * (r - 17) / (reach - 17)).toFixed(2)})`
+    ctx.fillRect(x, y, 1, 1)
+  }
+  return c
+}
+
+/** 火屬性夜晚的月暈：月亮外一圈暖橘色的光環。 */
+function drawMoonHalo(size) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d'), m = size / 2
+  const ring = ctx.createRadialGradient(m, m, size * 0.22, m, m, size * 0.5)
+  ring.addColorStop(0, 'rgba(255,150,60,0)')
+  ring.addColorStop(0.45, 'rgba(255,150,60,0.5)')
+  ring.addColorStop(1, 'rgba(255,120,40,0)')
+  ctx.fillStyle = ring
+  ctx.fillRect(0, 0, size, size)
+  return c
+}
+
+/** 月亮、日蝕、紅月與太陽共用的畫布貼圖設定；nearest 為像素圖（太陽與光芒）。 */
+function skyTexture(canvas, nearest = false) {
   const texture = new CanvasTexture(canvas)
   texture.colorSpace = SRGBColorSpace
   texture.generateMipmaps = false
-  texture.minFilter = LinearFilter
-  texture.magFilter = LinearFilter
+  texture.minFilter = nearest ? NearestFilter : LinearFilter
+  texture.magFilter = nearest ? NearestFilter : LinearFilter
   texture.wrapS = ClampToEdgeWrapping
   texture.wrapT = ClampToEdgeWrapping
   return texture
@@ -193,14 +246,21 @@ export function createTown(canvas, opts) {
   moonMesh.renderOrder = 10
   scene.add(moonMesh)
   const moon = { base: { x: 0, y: 0 }, current: { x: 0, y: 0 }, target: { x: 0, y: 0 } }
-  // 惡屬性：日蝕（清晨、白天、黃昏）與紅月（夜晚）放在月亮的位置；透明度只在套用外觀時寫入，透明時不繪製。
-  const omens = [drawEclipse, drawBloodMoon].map(draw => {
-    const material = new MeshBasicMaterial({ map: skyTexture(draw(MOON.size)), transparent: true, opacity: 0, depthTest: false, depthWrite: false })
+  // 放在月亮位置的屬性天象：惡的日蝕（清晨、白天、黃昏）與紅月（夜晚），火的像素大太陽與光芒（沒有月亮的時段）、
+  // 夜晚的暖橘月暈（畫在月亮後面）。key 為場景外觀的透明度欄位；透明度只在套用外觀時寫入，透明時不繪製。
+  const omens = [
+    { draw: drawEclipse, key: 'eclipse' },
+    { draw: drawBloodMoon, key: 'bloodMoon' },
+    { draw: drawSunRays, key: 'sun', nearest: true, order: 9, spin: true },
+    { draw: drawSun, key: 'sun', nearest: true },
+    { draw: drawMoonHalo, key: 'moonHalo', order: 9 }
+  ].map(({ draw, key, nearest = false, order = 10, spin = false }) => {
+    const material = new MeshBasicMaterial({ map: skyTexture(draw(MOON.size), nearest), transparent: true, opacity: 0, depthTest: false, depthWrite: false })
     const mesh = new Mesh(unitPlane, material)
-    mesh.renderOrder = 10
+    mesh.renderOrder = order
     mesh.visible = false
     scene.add(mesh)
-    return { mesh, material }
+    return { mesh, material, key, spin }
   })
 
   // 版面
@@ -219,6 +279,7 @@ export function createTown(canvas, opts) {
     village.resize(w, h)
     // 與低空透視鏡頭的地平線對齊，遠景霧色與天空無接縫。
     skyMaterial.uniforms.horizon.value = .5 + Math.tan(pitch) / (2 * Math.tan(village.camera.fov * Math.PI / 360))
+    post.setHorizon(skyMaterial.uniforms.horizon.value)
 
     // 月亮整顆留在地平線以上；斜俯視時天空較窄，依可用高度縮小並上移。
     const skyH = (1 - skyMaterial.uniforms.horizon.value) * h
@@ -288,9 +349,9 @@ export function createTown(canvas, opts) {
     skyMaterial.uniforms.bottom.value.copy(l.skyBottom)
     stars.setOpacity(l.stars)
     moonMaterial.opacity = l.moon
-    for (const [omen, opacity] of [[omens[0], l.eclipse], [omens[1], l.bloodMoon]]) {
-      omen.material.opacity = opacity
-      omen.mesh.visible = opacity > .001
+    for (const omen of omens) {
+      omen.material.opacity = l[omen.key]
+      omen.mesh.visible = l[omen.key] > .001
     }
   }
 
@@ -335,7 +396,11 @@ export function createTown(canvas, opts) {
     moon.current.x += (moon.target.x - moon.current.x) * smoothing
     moon.current.y += (moon.target.y - moon.current.y) * smoothing
     moonMesh.position.set(moon.base.x + moon.current.x, moon.base.y + moon.current.y, 0)
-    for (const omen of omens) omen.mesh.position.copy(moonMesh.position)
+    for (const omen of omens) {
+      omen.mesh.position.copy(moonMesh.position)
+      // 太陽光芒慢慢轉（約 50 秒一圈）；減少動態時停住。
+      if (omen.spin && omen.mesh.visible) omen.mesh.rotation.z = weatherTime * -.12
+    }
     stars.update(moon.current.x * starFollow, moon.current.y * starFollow, weatherTime)
 
     village.update(state.reducedMotion ? { x: 0, y: 0 } : villagePointer, now, state.reducedMotion, journeyProgress, dt)

@@ -38,10 +38,11 @@ export function createWeatherState() {
     }
   }
 }
-const FIELDS = ['tint','cover','thickness','light','fog','wind','wet','metal','heat','sunLow','eclipse']
+const FIELDS = ['tint','cover','thickness','light','fog','wind','wet','metal','heat','sunLow','eclipse','sun']
 /**
  * 日夜始終是基底；屬性染色依原時段亮度縮放，不把夜景變白天。
  * 惡（eclipse）：月亮不受雲量遮蔽，沒有月亮的時段（清晨、白天、黃昏）換成日蝕，夜晚換成紅色細月。
+ * 火（sun）：沒有月亮的時段天上出現像素大太陽，夜晚月亮外圍一圈暖橘月暈。
  */
 export function weatherLook(base, env) {
   const nightScale = 1 - base.windows * .88
@@ -54,6 +55,8 @@ export function weatherLook(base, env) {
     stars: base.stars * Math.max(0, 1 - (env.cover - 1) * .9),
     moon: base.moon * Math.max(.1, 1 - (env.cover - 1) * .7) * (1 - env.eclipse),
     bloodMoon: base.moon * env.eclipse,
-    eclipse: (1 - base.moon) * env.eclipse
+    eclipse: (1 - base.moon) * env.eclipse,
+    sun: (1 - base.moon) * env.sun,
+    moonHalo: base.moon * env.sun
   }
 }
