@@ -15,7 +15,7 @@
 |---|---|
 | 凍結區 | `public/css/**`、`public/data/cards.json`、`public/img/**`、`public/foils.txt`、`public/favicon.png`、`src/lib/**`。逐位元組與原作相同，任何需求都不得修改。 |
 | 授權 | GPL-3.0，README 與頁首副標位置註明原作者 simeydotme。 |
-| 部署路徑 | Vite `base` 固定 `/`，因凍結的 CSS 內含 `/img/...` 絕對路徑。部署目標未定，先只做本地開發。 |
+| 部署路徑 | Vite `base` 固定 `/`，因凍結的 CSS 內含 `/img/...` 絕對路徑。部署於 Cloudflare Pages，見 §17。 |
 | 語言 | 介面文案全繁體中文，統一用「卡牌」不用「卡片」。`<html lang="zh-Hant">`。 |
 | 技術說明 | 全部移除。每個展示區只保留一則博士口吻的卡種說明。 |
 
@@ -741,7 +741,7 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 ## 13. 待使用者提供
 
 - 大木博士頭像：已提供並裁切為 `public/town/professor.png`（512×512，白底，2026-09-06）。
-- 部署目標（決定後只需確認 `base` 仍為 `/`）。
+- 部署目標：已定為 Cloudflare Pages（2026-10-13），`base` 維持 `/`，設定與發布流程見 §17。
 
 ## 14. 滿版 UI 重製計畫（2026-09-08，P1–P3 已實作）
 
@@ -869,3 +869,45 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
   - 已知取捨：中軸取樣讓影子邊界不會斜切過樹冠，但整列像素同時明暗；同一排東西向的樹，右側樹的下半會落在左側樹的影子裡（左側光、45° 仰角下屬實）。
 - 已知限制：說話者被建築擋住時，對話框仍顯示在最上層。
 - 同批訪談已定、尚未實作：天氣改由訪客手動切換（晴、多雲、雨、雷雨、霧、飄雪），日夜維持依時間自動。
+
+## 17. 部署與發布（2026-10-13）
+
+部署平台為 Cloudflare Pages，以 Git 整合連接 GitHub `GavinLin512/pokemon-card-gallery`，推送後由 Cloudflare 建置。自訂網域未定。
+
+### 17.1 分支
+
+| 分支 | 用途 | Cloudflare 部署 |
+|---|---|---|
+| `main` | 日常開發 | 預覽，網址 `main.<專案名>.pages.dev` |
+| `release` | 正式版 | 正式（Production branch 設為 `release`） |
+
+`release` 只從 `main` 快轉（fast-forward），不直接在上面 commit，也不 force push。
+
+### 17.2 Cloudflare 建置設定
+
+| 欄位 | 值 |
+|---|---|
+| Framework preset | None（不選 Svelte：該預設的輸出資料夾為 `public`，與本專案不符） |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | 留空 |
+
+環境變數在 Production 與 Preview 都要設定，`VITE_` 開頭的變數在建置時寫入程式碼，漏設的環境會載不到閃卡圖層：
+
+| 變數 | 值 |
+|---|---|
+| `VITE_CDN`、`VITE_CDN_151` | 與 §4 的 `.env.local` 相同 |
+| `NODE_VERSION` | `22`（選填。建置映像檔 v3 預設 Node 22.16，已符合 Vite 7 要求的 20.19 以上；明確指定可避免預設版本變動時建置失敗） |
+
+依賴由 Cloudflare 依 `package-lock.json` 自動安裝，不需另外設定。
+
+### 17.3 發布流程
+
+1. 在 `main` 開發，`git push` 後到預覽網址確認。
+2. 上線：`git push origin main:release`，把 `main` 快轉推到遠端 `release`。遠端 `release` 有 `main` 沒有的 commit 時推送會被拒絕，不會覆蓋。等同於 `git switch release && git merge --ff-only main && git push && git switch main`。
+3. 到 Cloudflare 的 Deployments 確認最新一筆為 Production、來源分支為 `release`。上線後有問題時，可在 Deployments 對先前的正式部署執行 Rollback，再於 `main` 修正後重新發布。
+
+### 17.4 自訂網域與專案改名
+
+- 自訂網域在 Pages 專案的 Custom domains 加入，必須先在此加入再設 DNS，只設 CNAME 會出現 522。根網域（如 `example.com`）的 nameserver 必須指向 Cloudflare；子網域可留在原 DNS 商，以 CNAME 指向 `<專案名>.pages.dev`。
+- `<專案名>.pages.dev` 取自 Cloudflare 的專案名稱，與 GitHub repo 名稱無關。要換名稱不需 fork：新建 Pages 專案連接同一個 repo，照 §17.2 設定，把自訂網域從舊專案移除後加到新專案，確認新網址正常後刪除舊專案。名稱已被他人使用時，Cloudflare 會在後面加隨機字元。

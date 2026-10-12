@@ -24,4 +24,5 @@
 npm run dev      # 開發伺服器
 npm run build    # 建置
 npm run check    # svelte-check
+git push origin main:release   # 發布到正式網站（main 快轉到 release，見 PLAN §17）
 ```
