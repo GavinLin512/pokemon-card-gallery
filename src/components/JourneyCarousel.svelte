@@ -131,7 +131,9 @@
 </section>
 <style>
   .focus-carousel { --card-w: min(30vw, 330px, calc((100svh - 475px) * .716)); position: absolute; inset: 180px 0 215px; display: grid; align-content: center; justify-items: center; pointer-events: none; }
-  .card-stage { animation: stop-rise .28s cubic-bezier(.2,.7,.3,1) both; position: relative; width: var(--card-w); aspect-ratio: 660 / 921; touch-action: pan-y; pointer-events: auto; }
+  /* 到站浮現只播一次，播完不保留 opacity 與 translate（backwards 而非 both），放大時不必再關掉動畫；
+     若隨 .expanded 切換 animation，收合時會從透明重播，正在縮回的大卡被包進透明群組，低階手機明顯卡頓。 */
+  .card-stage { animation: stop-rise .28s cubic-bezier(.2,.7,.3,1) backwards; position: relative; width: var(--card-w); aspect-ratio: 660 / 921; touch-action: pan-y; pointer-events: auto; }
   /* 新舊主卡疊在同一格交叉淡化；舊卡淡出期間由 Svelte 設為 inert，不會接到點擊。 */
   .main-card { position: relative; width: 100%; z-index: 2; display: grid; }
   .card-slot { grid-area: 1 / 1; width: 100%; }
@@ -146,7 +148,6 @@
   strong { font-family: var(--font-display); font-weight: 400; font-size: 1.125rem; }
   span { font-size: var(--text-min); color: var(--ink-soft); }
   i { font-style: normal; }
-  .expanded .card-stage { animation: none; }
   .expanded .preview, .expanded .carousel-pager { visibility: hidden; }
   /* 景深陳列：主卡腳下有地面陰影、背後一圈微光；預覽與主卡同尺寸，以底邊中央為軸縮放。 */
   .depth .card-stage::before { content: ''; position: absolute; inset: -16% -32% -4%; background: radial-gradient(closest-side, #fff4d0b0, #fff4d000); pointer-events: none; animation: depth-glow 3.2s ease-in-out infinite alternate; }
