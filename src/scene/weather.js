@@ -70,7 +70,8 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     const mesh=new Points(geometry,material);mesh.frustumCulled=false
     register(key,weightKey,mesh,material,color,strength,staticEffect,nightGlow)
   }
-  particles('leaves','leaves',0,2500,'#8ccb4b',.8)
+  // 2026-10-12：飄葉 2500 減為 1500、羽毛 800 減為 500（使用者回饋太多）。
+  particles('leaves','leaves',0,1500,'#8ccb4b',.8)
   particles('leaf-glow','leaves',5,650,'#d0ff8a',.22,{additive:true,strength:.8})
   particles('embers','embers',1,1000,'#ff9a35',.27,{additive:true})
   // 2026-10-11：雨量較暴雨版減 20%；落地由 X 形噴濺改為貼地漣漪加彈起水珠（PLAN §9.4）。
@@ -102,7 +103,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   particles('petals','petals',6,1800,'#ffc1d5',.7)
   particles('flower-glow','petals',5,700,'#ffd0e4',.3,{additive:true})
   // 2026-10-12：羽毛改為像素羽毛，數量與尺寸都比舊版小；龍的金色鱗光由天空的龍星群取代（sky-weather.js）。
-  particles('feathers','feathers',7,800,'#ffffff',.7)
+  particles('feathers','feathers',7,500,'#ffffff',.7)
 
   const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;
     void main(){vUv=uv;vPhase=phase;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
