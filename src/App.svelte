@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick, untrack } from 'svelte'
-  import { fade } from 'svelte/transition'
+  import { fade, fly } from 'svelte/transition'
   import { sections as swshSections, sliceCards, buildCardSectionMap } from './config/sections.js'
   import { DEFAULT_SERIES, allSections, seriesOfSection } from './config/series.js'
   import { cards as cardRegistry } from './stores/cards.svelte.js'
@@ -50,6 +50,9 @@
   let releaseOpeningInput = () => {}
   /** 舞台內容的淡出／淡入時長（到站浮現仍由 app.css 的 stop-rise 負責）；減少動態時立即切換。 */
   const motion = (duration, delay = 0) => viewport.reducedMotion ? { duration: 0 } : { duration, delay }
+  /** 工具面板開合（PLAN §8 圖鑑抽屜）：手機從底部滑出，桌機側邊面板從右側滑入，旅程地圖置中浮起。
+   *  方向看節點上的 map-panel class：關閉時 journey.panel 已是 null，但淡出中的面板仍保留原本的 class。 */
+  const panelFly = (node, { duration }) => fly(node, { ...motion(duration), ...(viewport.isMobile ? { y: 48 } : node.classList.contains('map-panel') ? { y: 24 } : { x: 56 }) })
   const grouped = $derived(journey.sections.map(section => ({ section, cards: sliceCards(cards, section) })))
   const stop = $derived(journey.current.stop)
   // 舞台內容讀「最後顯示過的停靠站」：離站淡出的 220ms 內 stop 已是 null，但淡出中的標題、輪播與博士（計時器仍會讀 props）需要完整資料。
@@ -392,14 +395,17 @@
 </main>
 
 {#if journey.panel}
-  <div class="panel-backdrop" class:concealed={!!selectedSearchCard} aria-hidden="true"></div>
-  <div tabindex="-1" class="game-panel" class:concealed={!!selectedSearchCard} class:map-panel={journey.panel === 'map'} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
+  <div class="panel-backdrop" class:concealed={!!selectedSearchCard} aria-hidden="true" transition:fade={motion(200)}></div>
+  <div tabindex="-1" class="game-panel" class:concealed={!!selectedSearchCard} class:map-panel={journey.panel === 'map'} in:panelFly={{ duration: 280 }} out:panelFly={{ duration: 180 }} role="dialog" aria-modal="true" aria-labelledby="tool-title" bind:this={panelRoot} inert={!!selectedSearchCard}>
     <header class="panel-header"><div><p class="eyebrow">冒險隨身工具{journey.panel === 'search' ? ` · 目前為${journey.seriesInfo.full}` : ''}</p><h2 id="tool-title">{journey.panel === 'map' ? '旅程地圖' : journey.panel === 'search' ? '搜尋卡牌' : '我的圖鑑'}</h2></div><button class="panel-close" aria-label="關閉面板" onclick={() => closePanel()}><Icon name="close" /></button></header>
     <nav class="panel-tabs" aria-label="切換工具">{#each [['map','旅程地圖'], ['search','搜尋卡牌'], ['pokedex','我的圖鑑']] as [name,label]}<button class:chosen={journey.panel === name} aria-pressed={journey.panel === name} onclick={() => openPanel(name, null)}>{label}</button>{/each}</nav>
     <div class="panel-scroll" bind:this={searchView}>
-      {#if journey.panel === 'map'}<JourneyMap {navigate} {switchSeries} />
-      {:else if journey.panel === 'search'}<Search /><SearchResults selectCard={selectSearchCard} />
-      {:else}<PokedexDrawer {selectEntry} />{/if}
+      <!-- 切換分頁時新內容輕浮現；面板剛打開時由 panelFly 負責，這裡的 local 過場不重複播放 -->
+      {#key journey.panel}<div in:fly={{ y: 8, ...motion(220) }}>
+        {#if journey.panel === 'map'}<JourneyMap {navigate} {switchSeries} />
+        {:else if journey.panel === 'search'}<Search /><SearchResults selectCard={selectSearchCard} />
+        {:else}<PokedexDrawer {selectEntry} />{/if}
+      </div>{/key}
     </div>
   </div>
 {/if}
