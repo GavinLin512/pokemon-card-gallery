@@ -1,5 +1,5 @@
 import { Group, BufferGeometry, Float32BufferAttribute, ShaderMaterial, Points, Color,
-  AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, MeshBasicMaterial, PointLight, Vector3, Vector4 } from 'three'
+  AdditiveBlending, NormalBlending, Mesh, PlaneGeometry, DoubleSide, PointLight, Vector3, Vector4, BufferAttribute } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { particleVertex, particleFragment, effectFragmentEnd } from './weather-shaders.js'
 
@@ -22,6 +22,8 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   // 格鬥的震地衝擊 (x, z, 經過秒數, 強度) 與衝擊點地面高度：所有粒子材質共用同一個物件，每幀只改數值。
   const IMPACT_CYCLE=4, IMPACT_FIRST=1.2
   const impact=new Vector4(0,0,IMPACT_CYCLE,0), impactGround={value:0}
+  // 雷的落雷點 (x, z, 經過秒數, 強度) 與地面高度：地景的電光圈與電花粒子共用。
+  const strikePoint=new Vector4(0,0,1,0), strikeGround={value:0}
 
   function outdoorPoint() {
     for (let i=0; i<30; i++) {
@@ -66,7 +68,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     const material=new ShaderMaterial({vertexShader:particleVertex,fragmentShader:particleFragment,
       transparent:true,depthWrite:false,depthTest:true,blending:additive?AdditiveBlending:NormalBlending,
       uniforms:{time:{value:0},mode:{value:mode},viewport:{value:800},size:{value:size},color:{value:new Color(color)},opacity:{value:0},
-        impact:{value:impact},impactGround}})
+        impact:{value:impact},impactGround,strike:{value:strikePoint},strikeGround}})
     const mesh=new Points(geometry,material);mesh.frustumCulled=false
     register(key,weightKey,mesh,material,color,strength,staticEffect,nightGlow)
   }
@@ -104,6 +106,12 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   particles('flower-glow','petals',5,700,'#ffd0e4',.3,{additive:true})
   // 2026-10-12：羽毛改為像素羽毛，數量與尺寸都比舊版小；龍的金色鱗光由天空的龍星群取代（sky-weather.js）。
   particles('feathers','feathers',7,500,'#ffffff',.7)
+  // 2026-10-12：雷的落雷電花與竄流電弧。電花位置由落雷點決定，數量只需涵蓋一次落雷；
+  // 電弧固定在屋頂邊、圍欄柱頂（與鋼的星芒同一組錨點）與三分之一的樹梢。兩者都自己發光，夜晚不變暗。
+  particles('bolt-sparks','sparks',20,50,'#ffe14a',.28,{additive:true,nightGlow:true})
+  const arcSpots=[...glints]
+  trees.forEach((t,i)=>{ if (i%3===0) arcSpots.push({x:t.x,y:floorAt(t.x,t.z)+(ground?4.1:3.9),z:t.z}) })
+  particles('static-arcs','sparks',21,0,'#ffd84a',.9,{additive:true,anchors:arcSpots,nightGlow:true})
 
   const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;
     void main(){vUv=uv;vPhase=phase;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
@@ -186,43 +194,97 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     }
   `})
 
-  const boltGeometry=new BufferGeometry()
-  boltGeometry.setAttribute('position',new Float32BufferAttribute([],3))
-  const boltMaterial=new MeshBasicMaterial({color:'#edf4ff',transparent:true,depthWrite:false,side:DoubleSide,toneMapped:false})
-  const bolt=new Mesh(boltGeometry,boltMaterial);bolt.name='cloud-lightning';bolt.frustumCulled=false;bolt.visible=false;group.add(bolt)
-  const lightningLight=new PointLight('#c8dcff',0,110,1.5);group.add(lightningLight)
-  resources.push(boltGeometry,boltMaterial)
-  function strike(camera) {
-    const origin=clouds?.strikeOrigin(camera)
-    if (!origin) return
-    const {x,y,z}=origin, points=[], floor=heightAt(x,z)+.2
-    const segment=(a,b,width)=>{
-      points.push(a[0]-width,a[1],a[2],a[0]+width,a[1],a[2],b[0]-width,b[1],b[2],
-        a[0]+width,a[1],a[2],b[0]+width,b[1],b[2],b[0]-width,b[1],b[2])
+  // 鏡頭前方可見的戶外地面：前方 near–far 單位，左右偏離畫面中線 sideMin–sideMax 的半寬（放大的卡牌蓋在畫面中央）。
+  // 格鬥的衝擊與 HD-2D 的落雷共用；結果寫入 picked，不另外配置。兩側多是房子時最多試 24 次，
+  // 仍落在屋簷下就退回正前方的中央道路（道路上沒有建築），不會落在屋內。
+  const facing=new Vector3(), picked={x:0,z:0}
+  function pickGround(camera,near,far,sideMin,sideMax) {
+    camera.getWorldDirection(facing)
+    const length=Math.hypot(facing.x,facing.z)||1, fx=facing.x/length, fz=facing.z/length
+    const halfWidth=Math.tan(camera.fov*Math.PI/360)*camera.aspect
+    let ahead=near
+    for (let i=0; i<24; i++) {
+      ahead=near+Math.random()*(far-near)
+      const side=(Math.random()<.5?-1:1)*(sideMin+Math.random()*(sideMax-sideMin))*ahead*halfWidth
+      picked.x=camera.position.x+fx*ahead-fz*side; picked.z=camera.position.z+fz*ahead+fx*side
+      if (!covered(picked.x,picked.z)) return picked
     }
-    let previous=[x,y,z]
-    for(let i=1;i<=18;i++) {
-      const end=i===18, p=[x+(end?0:(Math.random()-.5)*4),y-(y-floor)*i/18,z+(end?0:(Math.random()-.5)*1.6)]
-      segment(previous,p,.14)
-      if(i===4||i===8||i===11) {
-        let branch=p
+    picked.x=camera.position.x+fx*ahead; picked.z=camera.position.z+fz*ahead
+    return picked
+  }
+  // 雷（2026-10-12 改版）：黃色像素閃電。HD-2D 的雲在畫面上緣之外，改為先挑鏡頭前方 10–22 單位、偏離中線 40%–75% 半寬的戶外地面（放大的卡牌約蓋住中線兩側 37%），
+  // 從畫面上方 26 單位劈下；現行畫風仍從看得到的雲團劈到正下方的地面。折點對齊 0.35 的格子，呈像素鋸齒。
+  // 主幹 18 段加三條各 3 段的分岔，頂點緩衝一次配置、每次落雷重寫。strike = (x, z, 經過秒數, 強度)。
+  const BOLT_SEGMENTS=27, BOLT_GRID=.35
+  const boltPositions=new Float32Array(BOLT_SEGMENTS*18), boltAcross=new Float32Array(BOLT_SEGMENTS*6)
+  const boltGeometry=new BufferGeometry()
+  boltGeometry.setAttribute('position',new BufferAttribute(boltPositions,3))
+  boltGeometry.setAttribute('across',new BufferAttribute(boltAcross,1))
+  const boltMaterial=new ShaderMaterial({
+    vertexShader:'attribute float across;varying float vAcross;void main(){vAcross=across;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    // 硬邊三層：白黃核心、黃色、外圈半透明橘黃。
+    fragmentShader:`uniform float opacity;varying float vAcross;
+      void main(){float a=abs(vAcross);
+      vec3 c=a<.3 ? vec3(1.,.98,.85) : a<.62 ? vec3(1.,.86,.25) : vec3(1.,.66,.12);
+      gl_FragColor=vec4(c,(a<.62 ? 1. : .55)*opacity);
+      #include <colorspace_fragment>
+      }`,
+    uniforms:{opacity:{value:0}},transparent:true,depthWrite:false,side:DoubleSide})
+  const bolt=new Mesh(boltGeometry,boltMaterial);bolt.name='cloud-lightning';bolt.frustumCulled=false;bolt.visible=false;group.add(bolt)
+  // HD-2D 先挑地面的落雷就在鏡頭前方：光照範圍 50、強度 150，夜晚再減四成五，不會把整座鎮照成白天。
+  // 現行畫風從 18–100 單位外的雲團劈下，沿用原本的範圍 110、強度 210 與雲底下方的光源位置。
+  const lightningLight=new PointLight('#fff1c2',0,110,1.5);group.add(lightningLight)
+  let nightLevel=0, lightPeak=210, nearStrike=false
+  resources.push(boltGeometry,boltMaterial)
+  let boltCount=0
+  const snap=v=>Math.round(v/BOLT_GRID)*BOLT_GRID
+  /** 一段帶狀四邊形，寬度方向垂直於線段（xy 平面），across 由 −1 到 1 供著色器分出三層。 */
+  function segment(ax,ay,az,bx,by,bz,width) {
+    if (boltCount>=BOLT_SEGMENTS) return
+    const dx=bx-ax, dy=by-ay, length=Math.hypot(dx,dy)||1, nx=-dy/length*width, ny=dx/length*width
+    let v=boltCount*6
+    const corner=(x,y,z,side)=>{boltPositions[v*3]=x;boltPositions[v*3+1]=y;boltPositions[v*3+2]=z;boltAcross[v]=side;v++}
+    corner(ax-nx,ay-ny,az,-1);corner(ax+nx,ay+ny,az,1);corner(bx-nx,by-ny,bz,-1)
+    corner(ax+nx,ay+ny,az,1);corner(bx+nx,by+ny,bz,1);corner(bx-nx,by-ny,bz,-1)
+    boltCount++
+  }
+  function strike(camera) {
+    const origin=ground ? null : clouds?.strikeOrigin(camera)
+    const {x,z}=origin ?? pickGround(camera,10,22,.4,.75)
+    const floor=floorAt(x,z), y=origin ? origin.y : floor+26
+    boltCount=0
+    let px=x, py=y, pz=z
+    for (let i=1; i<=18; i++) {
+      const end=i===18, nx=end?x:x+snap((Math.random()-.5)*3.2), ny=y-(y-floor-.05)*i/18, nz=end?z:z+(Math.random()-.5)*1.2
+      segment(px,py,pz,nx,ny,nz,.25)
+      if (i===5||i===9||i===12) {
         const side=Math.random()<.5?-1:1
-        for(let j=1;j<=3;j++) {
-          const next=[p[0]+side*j*(.8+Math.random()*.65),p[1]-j*.9,p[2]+j*.3]
-          segment(branch,next,.075-j*.014);branch=next
+        let bx=nx, by=ny, bz=nz
+        for (let j=1; j<=3; j++) {
+          const cx=nx+side*snap(j*(.8+Math.random()*.65)), cy=ny-j*.9, cz=nz+j*.3
+          segment(bx,by,bz,cx,cy,cz,.15-j*.025); bx=cx; by=cy; bz=cz
         }
       }
-      previous=p
+      px=nx; py=ny; pz=nz
     }
-    boltGeometry.setAttribute('position',new Float32BufferAttribute(points,3));boltGeometry.computeBoundingSphere()
-    lightningLight.position.set(x,Math.min(12,y-4),z);flash=.62
+    boltGeometry.setDrawRange(0,boltCount*6)
+    boltGeometry.attributes.position.needsUpdate=true; boltGeometry.attributes.across.needsUpdate=true
+    nearStrike=!origin
+    lightningLight.distance=nearStrike ? 50 : 110; lightPeak=nearStrike ? 150 : 210
+    lightningLight.position.set(x,nearStrike ? floor+5 : Math.min(12,y-4),z)
+    strikePoint.x=x; strikePoint.y=z; strikeGround.value=floor
+    flash=.62
   }
+  // 雲中電光：每 1–2.3 秒雲裡一團閃亮（不落地），sheet = (相對畫面中央的橫向位置, 天空高度, 經過秒數, 強度)；
+  // 前景層（sky-weather.js）與雲層同步閃。落雷與雲中電光共用 lastFlash：任兩次閃光的開始至少相隔 1 秒，
+  // 每次兩個脈衝相隔 0.25–0.3 秒，任一秒內最多 3 個脈衝，避免大面積連續閃爍。
+  const sheet=new Vector4(0,0,1,0)
+  let nextSheet=0, lastFlash=-Infinity
   // 龍：約每 10 秒飛過一次（3.6 秒），只有地面的龍影。每一輪隨機挑鏡頭前方可見地面上的一個經過點與任意飛行方向，
   // 位置與走向每次都不同；左右範圍依畫面寬高比縮放，直向手機也落在畫面內。angle 為 0 時往 -z（畫面深處）飛。
   const DRAGON_CYCLE=10, DRAGON_PASS=3.6, DRAGON_REACH=25
   const dragon={x:0,z:0,angle:0,shadow:0}
   let dragonClock=0, dragonPath=null
-  const facing=new Vector3()
   function flyDragon(step,camera,weight) {
     dragonClock+=step
     if (dragonClock>=DRAGON_CYCLE||!dragonPath) {
@@ -245,15 +307,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     impactClock+=step
     if (impactClock>=IMPACT_CYCLE) {
       impactClock%=IMPACT_CYCLE
-      camera.getWorldDirection(facing)
-      const length=Math.hypot(facing.x,facing.z)||1, fx=facing.x/length, fz=facing.z/length
-      const halfWidth=Math.tan(camera.fov*Math.PI/360)*camera.aspect
-      let x=0, z=0
-      for (let i=0; i<8; i++) {
-        const ahead=9+Math.random()*11, side=(Math.random()<.5?-1:1)*(.3+Math.random()*.45)*ahead*halfWidth
-        x=camera.position.x+fx*ahead-fz*side; z=camera.position.z+fz*ahead+fx*side
-        if (!covered(x,z)) break
-      }
+      const {x,z}=pickGround(camera,9,20,.3,.75)
       impact.x=x; impact.y=z; impactGround.value=floorAt(x,z); impactPlaced=true
     }
     impact.z=impactPlaced ? impactClock : IMPACT_CYCLE
@@ -271,14 +325,21 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
         e.mesh.visible=e.material.uniforms.opacity.value>.001
       }
       if(reduced||weights.sparks<.5) {flash=0;nextLightning=time+.4+Math.random()*.6}
-      else if(time>=nextLightning) {strike(camera);nextLightning=time+1.4+Math.random()*1.6}
+      else if(time>=nextLightning&&time-lastFlash>=1) {strike(camera);lastFlash=time;nextLightning=time+1.5+Math.random()*1.5}
       flash=Math.max(0,flash-step)
-      // 每次放電兩個短脈衝，局部照亮雲底與地景；不使用全螢幕白閃。
+      // 每次放電兩個短脈衝，局部照亮落點附近的地景與雲；不使用全螢幕白閃。
       const age=.62-flash
       const pulse=flash>0?Math.max(0,1-age/.16,1-Math.abs(age-.3)/.1):0
-      bolt.visible=pulse>.02;boltMaterial.opacity=Math.min(1,pulse*1.3)*weights.sparks
-      lightningLight.intensity=pulse*210*weights.sparks
-      clouds?.setFlash(pulse*weights.sparks)
+      bolt.visible=pulse>.02;boltMaterial.uniforms.opacity.value=Math.min(1,pulse*1.3)*weights.sparks
+      lightningLight.intensity=pulse*lightPeak*weights.sparks*(nearStrike ? 1-nightLevel*.45 : 1)
+      strikePoint.z=age; strikePoint.w=flash>0 ? weights.sparks : 0
+      if(reduced||weights.sparks<.01) {sheet.w=0;nextSheet=time+.3}
+      else {
+        sheet.z+=step
+        if(time>=nextSheet&&time-lastFlash>=1) {sheet.set((Math.random()-.5)*.8,.25+Math.random()*.6,0,.5+Math.random()*.5);lastFlash=time;nextSheet=time+1+Math.random()*1.3}
+      }
+      const sheetPulse=sheet.w*weights.sparks*Math.max(0,1-sheet.z/.12,.7*(1-Math.abs(sheet.z-.25)/.08))
+      clouds?.setFlash(Math.max(pulse*weights.sparks,sheetPulse*.6))
       if(reduced||weights.rays<.01) {dragonClock=0;dragonPath=null;dragon.shadow=0}
       else flyDragon(step,camera,weights.rays)
       if(reduced||weights.aura<.01) {impactClock=IMPACT_CYCLE-IMPACT_FIRST;impactPlaced=false;impact.z=IMPACT_CYCLE;impact.w=0}
@@ -290,7 +351,16 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     get impact(){return impact},
     /** 衝擊點的地面高度。 */
     get impactGround(){return impactGround.value},
-    setLook(look){for(const e of effects)if(!e.nightGlow)e.material.uniforms.color.value.copy(e.color).multiplyScalar(1-look.windows*.58)},
+    /** 雷的落雷點 (x, z, 經過秒數, 強度)；強度 0 為沒有落雷（含減少動態）。 */
+    get strike(){return strikePoint},
+    /** 落雷點的地面高度。 */
+    get strikeGround(){return strikeGround.value},
+    /** 雲中電光 (橫向位置, 天空高度, 經過秒數, 強度)。 */
+    get sheet(){return sheet},
+    setLook(look){
+      nightLevel=look.windows
+      for(const e of effects)if(!e.nightGlow)e.material.uniforms.color.value.copy(e.color).multiplyScalar(1-look.windows*.58)
+    },
     get activeKey(){return state.key},
     get count(){return effects.reduce((n,e)=>n+(e.mesh.isPoints?e.mesh.geometry.attributes.position.count:0),0)},
     dispose(){resources.forEach(r=>r.dispose());scene.remove(group);group.clear()}

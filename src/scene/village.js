@@ -404,6 +404,9 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     // 格鬥衝擊：減少動態時強度為 0，地景與看板都略過。
     weatherUniforms.impact.value.copy(weather.impact)
     weatherUniforms.impactGround.value = weather.impactGround
+    // 雷的落雷點：地面電光圈；減少動態時強度為 0。
+    weatherUniforms.strike.value.copy(weather.strike)
+    weatherUniforms.strikeGround.value = weather.strikeGround
     // 鏡頭隨地形升降的高度即所在處的地面高度；貼地的暗影觸手與薄紫霧不爬上屋頂。
     weatherUniforms.ground.value = rise
   }

@@ -48,6 +48,8 @@ export const chatLines = [
   { when: 'any', weather: 'rain', lines: ['傘帶了嗎？', '忘在家裡了。'] },
   { when: 'night', weather: 'rain', lines: ['雨夜好安靜。', '早點回家吧。'] },
   { when: 'any', weather: 'sparks', lines: ['打雷了！', '別站在樹下！'] },
+  { when: 'any', weather: 'sparks', lines: ['屋頂在冒電花！', '皮卡丘在附近嗎？'] },
+  { when: 'any', weather: 'sparks', lines: ['雲裡一閃一閃的。', '要打大雷了！'] },
   { when: 'any', weather: 'leaves', lines: ['風裡飄著葉子。', '草叢在跳舞耶。'] },
   { when: 'any', weather: 'embers', lines: ['今天好熱啊。', '地面都在冒煙。'] },
   { when: 'any', weather: 'orbs', lines: ['石頭浮起來了！', '是念力嗎？'] },

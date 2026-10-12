@@ -177,9 +177,12 @@ export function createTown(canvas, opts) {
   scene.add(stars.points)
 
   const weather = village.weather
-  // 龍屬性的流星與超能力的極光（sky-weather.js），在背景層，村莊的雲與遠景會蓋在前面。
+  // 龍屬性的流星、超能力的極光與雷的雲中電光（sky-weather.js），在背景層，村莊的雲與遠景會蓋在前面。
   const skyWeather = createSkyWeather({ lowPower: state.lowPower })
   scene.add(...skyWeather.meshes)
+  // 雷的雲中電光疊在立體雲之上，村莊畫完才畫；沒有閃光時整層略過。
+  const skyFront = new Scene()
+  skyFront.add(...skyWeather.frontMeshes)
   // 後製效果：每幀寫入同一個物件（熱浪、空間扭曲、格鬥權重與震動位移）。
   const postEffects = { heat: 0, warp: 0, quake: 0, shakeX: 0, shakeY: 0 }
 
@@ -346,7 +349,7 @@ export function createTown(canvas, opts) {
     }
     if (lookChanged) applyLook()
     const weights = sceneLook.weather.weights
-    skyWeather.update(weatherTime, state.reducedMotion ? 0 : weights.rays, weights.orbs)
+    skyWeather.update(weatherTime, state.reducedMotion ? 0 : weights.rays, weights.orbs, weather.sheet, state.reducedMotion ? 0 : weights.sparks)
     if (!state.reducedMotion) weatherTime += dt
     postEffects.heat = state.reducedMotion ? 0 : sceneLook.environment.heat * (state.lowPower ? .45 : 1)
     postEffects.warp = state.reducedMotion ? 0 : weights.orbs
@@ -362,6 +365,7 @@ export function createTown(canvas, opts) {
     renderer.render(scene, camera)
     renderer.clearDepth()
     renderer.render(village.scene, village.camera)
+    if (skyWeather.frontVisible) renderer.render(skyFront, camera)
     if (postActive) post.render(renderer, weatherTime, postEffects)
     // 村民對話框在後製之後畫，保持銳利、不受移軸模糊。
     if (village.overlay) renderer.render(village.overlay, village.camera)

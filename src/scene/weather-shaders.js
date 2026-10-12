@@ -109,6 +109,9 @@ uniform float time, mode, viewport, size;
 // 格鬥的衝擊 (x, z, 經過秒數, 強度) 與衝擊點的地面高度，只有沙塵與碎石讀取。
 uniform vec4 impact;
 uniform float impactGround;
+// 雷的落雷點 (x, z, 經過秒數, 強度) 與地面高度，只有電花讀取。
+uniform vec4 strike;
+uniform float strikeGround;
 varying float fade, turn, variant, flip;
 ${weatherFields}
 void main(){
@@ -169,6 +172,17 @@ void main(){
    float period=7.+seed.y*5., age=fract(t/period+seed.x)*period;
    fade=smoothstep(0.,.3,age)*(1.-smoothstep(2.3,2.6,age));
    flip=clamp(min(abs(age-.95),abs(age-1.7))/.09,0.,1.); turn=0.;
+ } else if(mode==20.) {
+   // 落雷炸開的電花：從落雷點往外、往上飛，0.6 秒內落回地面並熄滅。
+   float age=strike.z, ang=seed.y*6.2832, speed=2.5+seed.z*4.;
+   p=vec3(strike.x+cos(ang)*speed*age,strikeGround+.15+(2.+seed.x*3.)*age-6.*age*age,strike.y+sin(ang)*speed*age);
+   p.y=max(p.y,strikeGround+.05);
+   fade=(1.-smoothstep(.3,.6,age))*step(.001,strike.w);
+ } else if(mode==21.) {
+   // 竄流電弧：每個錨點各自 2.5–5.5 秒一輪，亮 0.35 秒；flip 每 1/16 秒換一次，電弧折角跟著變，看起來劈啪作響。
+   float period=2.5+seed.y*3., age=fract(t/period+seed.x)*period;
+   fade=smoothstep(0.,.03,age)*(1.-smoothstep(.28,.35,age));
+   flip=floor(t*16.)+floor(seed.z*97.); turn=seed.y*3.1416;
  } else if(mode==0. || mode==6.) {
    float gust=sin(t*.85+position.z*.14);
    p.x+=sin(t*.65+seed.y*9.)*1.8+life*5.+gust*.8;
@@ -256,6 +270,26 @@ void main(){
    float halo=(1.-body)*step(outside,.11)*flip;
    tint=mix(tint,vec3(.92,.62,1.),halo);
    a=max(body,halo*.8);
+ } else if(mode==20.) {
+   // 像素電花：6 格見方的十字，中心一格白、其餘黃。
+   vec2 g=abs(floor(gl_PointCoord*6.)-2.5);
+   a=step(min(g.x,g.y),.6);
+   tint=mix(color,vec3(1.,1.,.9),step(max(g.x,g.y),.6));
+ } else if(mode==21.) {
+   // 像素電弧：14 格見方，一條四段的鋸齒折線橫過中央，核心白黃、外圍約一格黃光；折角依 flip 以不含 sin 的雜湊挑選。
+   vec2 cell=(floor(gl_PointCoord*14.)+.5)/14.-.5;
+   vec2 q=mat2(c,-s,s,c)*cell, from=vec2(-.42,0.);
+   float best=1.;
+   for(int i=1;i<=4;i++) {
+     float k=fract((flip+float(i)*7.13)*.1031); k*=k+33.33; k=fract((k+k)*k);
+     vec2 to=vec2(-.42+float(i)*.21,i==4 ? 0. : (k-.5)*.5), ab=to-from;
+     float h=clamp(dot(q-from,ab)/dot(ab,ab),0.,1.);
+     best=min(best,length(q-from-ab*h));
+     from=to;
+   }
+   float core=step(best,.045);
+   a=max(core,step(best,.11)*.55);
+   tint=mix(color,vec3(1.,1.,.92),core);
  } else if(mode==19.) {
    // 一對像素眼睛：16 格寬，杏仁形、往鼻樑斜下的紅眼，中央一格黃色瞳光，外圍淡淡紅光；眼皮依 flip 闔成一條線。
    vec2 g=floor(gl_PointCoord*16.);

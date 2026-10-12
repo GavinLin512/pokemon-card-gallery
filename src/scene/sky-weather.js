@@ -1,6 +1,6 @@
-import { BufferGeometry, Float32BufferAttribute, ShaderMaterial, Mesh, Color, Vector2, AdditiveBlending, DoubleSide, PlaneGeometry } from 'three'
+import { BufferGeometry, Float32BufferAttribute, ShaderMaterial, Mesh, Color, Vector2, Vector4, AdditiveBlending, DoubleSide, PlaneGeometry } from 'three'
 
-// 屬性天氣的天空（PLAN §9.4，2026-10-12）：龍的龍星群與超能力的極光，畫在 town.js 的正交背景層，與星星、月亮同層。
+// 屬性天氣的天空（PLAN §9.4，2026-10-12）：龍的龍星群、超能力的極光與雷的雲中電光，畫在 town.js 的正交背景層，與星星、月亮同層。
 // 斜俯視時天空只是畫面上緣的一條，距離約 100–190 單位，世界座標的粒子與平面會被距離淡出；
 // 背景層先畫、村莊後畫，雲團與遠景自然蓋在流星與極光前面。
 
@@ -93,6 +93,31 @@ const AURORA_SHADER = {
   `
 }
 
+// 雷的雲中電光：雲裡一團橢圓形的淡黃白光，閃兩下（0 秒與 0.25 秒）；天空也跟著微亮。
+// HD-2D 的天空帶幾乎被立體雲蓋滿，這層畫在村莊之後（town.js 的前景層），疊加在雲上，看起來是雲從裡面亮起來。
+// sheet = (相對畫面中央的橫向位置, 天空高度 0–1, 經過秒數, 強度)，由 weather.js 每一閃重新挑選。
+const SHEET_SHADER = {
+  vertexShader: AURORA_SHADER.vertexShader,
+  fragmentShader: `
+    uniform vec4 sheet;
+    uniform float horizon, aspect, opacity;
+    varying vec2 vUv;
+    void main() {
+      float h = (vUv.y - horizon) / (1. - horizon);
+      if (h < -.1) discard;
+      float age = sheet.z;
+      float pulse = max(max(0., 1. - age / .12), .7 * max(0., 1. - abs(age - .25) / .08));
+      vec2 d = vec2((vUv.x - .5 - sheet.x) * aspect, vUv.y - horizon - sheet.y * (1. - horizon)) / vec2(.35, .12);
+      // 往地平線下淡出，不留下一條水平的切邊。
+      float glow = (exp(-dot(d, d) * 2.) + .25) * smoothstep(-.1, .2, h);
+      float a = glow * pulse * sheet.w * opacity * .8;
+      if (a < .003) discard;
+      gl_FragColor = vec4(1., .96, .82, a);
+      #include <colorspace_fragment>
+    }
+  `
+}
+
 export function createSkyWeather({ lowPower = false } = {}) {
   const count = lowPower ? 8 : 14
   const corners = [], seeds = [], index = []
@@ -134,8 +159,22 @@ export function createSkyWeather({ lowPower = false } = {}) {
   aurora.renderOrder = .5
   aurora.visible = false
 
+  const sheetMaterial = new ShaderMaterial({
+    ...SHEET_SHADER,
+    uniforms: { sheet: { value: new Vector4() }, horizon: { value: .8 }, aspect: { value: 1 }, opacity: { value: 0 } },
+    transparent: true, depthTest: false, depthWrite: false, blending: AdditiveBlending
+  })
+  const sheet = new Mesh(auroraGeometry, sheetMaterial)
+  sheet.name = 'sheet-lightning'
+  sheet.frustumCulled = false
+  sheet.renderOrder = .6
+  sheet.visible = false
+
   return {
     meshes: [aurora, meteors],
+    /** 畫在村莊之後的前景層；只在 frontVisible 時繪製。 */
+    frontMeshes: [sheet],
+    get frontVisible() { return sheet.visible },
     /** horizon 為天空著色器的地平線（相對視窗高度、從底部起算）。 */
     layout(width, height, horizon) {
       meteorMaterial.uniforms.resolution.value.set(width, height)
@@ -143,12 +182,19 @@ export function createSkyWeather({ lowPower = false } = {}) {
       aurora.scale.set(width, height, 1)
       auroraMaterial.uniforms.horizon.value = horizon
       auroraMaterial.uniforms.aspect.value = width / height
+      sheet.scale.set(width, height, 1)
+      sheetMaterial.uniforms.horizon.value = horizon
+      sheetMaterial.uniforms.aspect.value = width / height
     },
     /**
      * rays 為龍屬性權重（減少動態時傳 0）；orbs 為超能力權重。
      * 極光屬於天色，減少動態時仍顯示，呼叫端不推進時間，光簾停住不動。
+     * flash 為 weather.js 的雲中電光 vec4，sparks 為雷屬性權重（減少動態時傳 0）；只在閃光的 0.4 秒內繪製。
      */
-    update(time, rays, orbs) {
+    update(time, rays, orbs, flash, sparks) {
+      sheetMaterial.uniforms.sheet.value.copy(flash)
+      sheetMaterial.uniforms.opacity.value = sparks
+      sheet.visible = sparks > .001 && flash.w > .001 && flash.z < .4
       meteorMaterial.uniforms.time.value = time
       meteorMaterial.uniforms.opacity.value = rays
       meteors.visible = rays > .001
@@ -161,6 +207,7 @@ export function createSkyWeather({ lowPower = false } = {}) {
       meteorMaterial.dispose()
       auroraGeometry.dispose()
       auroraMaterial.dispose()
+      sheetMaterial.dispose()
     }
   }
 }

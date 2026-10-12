@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Scene, Color, Vector3 } from 'three'
+import { Scene, Color, Vector3, Vector4, PerspectiveCamera } from 'three'
 import { weatherKeyFor, weatherByType, weatherEffects } from '../src/config/weather.js'
 import { createSceneLook } from '../src/scene/look.js'
 import { createVillage } from '../src/scene/village.js'
@@ -74,7 +74,7 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
  for(let i=0;i<120;i++){
   step(i*100,false,0,.1)
   const bolt=v.scene.getObjectByName('cloud-lightning')
-  if(bolt.visible&&!wasVisible){strikes++;assert.ok(bolt.geometry.attributes.position.count>=66);assert.ok(bolt.geometry.attributes.position.array.every(Number.isFinite))}
+  if(bolt.visible&&!wasVisible){strikes++;assert.ok(bolt.geometry.drawRange.count>=18*6,'trunk plus branches');assert.ok(bolt.geometry.attributes.position.array.every(Number.isFinite))}
   wasVisible=bolt.visible
   if(i===40)assert.ok(strikes>=1,'first flash appears within four seconds of selecting weather')
  }
@@ -194,8 +194,8 @@ test('with HD-2D terrain the ground weather sits on each terrace instead of unde
 
 test('fighting impacts land on open ground ahead of the camera, off the card in the middle, and move every hit',()=>{
  const {look,v,step}=villageWithLook();v.resize(1440,900);look.setWeather('aura')
- // 真新鎮兩棟民宅與研究所的範圍（含屋簷），衝擊點不能落在屋內。
- const buildings=[[-7,-8,3.5,2.5],[7,-8,3.5,2.5],[7,4,4.6,3]]
+ // 真新鎮兩棟民宅與研究所的牆內範圍，衝擊點不能落在屋內（屋簷外緣不算）。
+ const buildings=[[-7,-8,3.1,2.3],[7,-8,3.1,2.3],[7,4,4.4,2.8]]
  const hits=[];let lastAge=Infinity
  for(let i=0;i<180;i++){
   step(i*100,false,.1,.1)
@@ -266,10 +266,81 @@ test('classic look only runs the post pass for heat, psychic warp or fighting we
 })
 
 test('psychic aurora shows with the psychic weight even when reduced motion holds the meteors back',()=>{
- const sky=createSkyWeather(),[aurora,meteors]=sky.meshes
- sky.update(3,0,0);assert.equal(aurora.visible,false);assert.equal(meteors.visible,false)
- sky.update(3,0,.6);assert.equal(aurora.visible,true);assert.equal(meteors.visible,false)
+ const sky=createSkyWeather(),[aurora,meteors]=['psychic-aurora','draco-meteors'].map(name=>sky.meshes.find(m=>m.name===name))
+ const calm=new Vector4(0,0,1,0)
+ sky.update(3,0,0,calm,0);assert.equal(aurora.visible,false);assert.equal(meteors.visible,false)
+ sky.update(3,0,.6,calm,0);assert.equal(aurora.visible,true);assert.equal(meteors.visible,false)
  assert.equal(aurora.material.uniforms.opacity.value,.6)
- sky.update(3,1,0);assert.equal(aurora.visible,false);assert.equal(meteors.visible,true)
+ sky.update(3,1,0,calm,0);assert.equal(aurora.visible,false);assert.equal(meteors.visible,true)
+ sky.dispose()
+})
+
+test('HD-2D lightning strikes open ground ahead of the camera off the card, reuses its buffer, and stops in reduced mode',()=>{
+ // HD-2D 的雲在畫面上緣之外：傳入地形時改為先挑地面再從上方劈下。
+ const look=createSceneLook(periodByKey('day')),w=createWeather(new Scene(),{state:look.weather,lowPower:true,ground:terrainAt})
+ const camera=new PerspectiveCamera(56,1440/900,.1,240);camera.position.set(0,9,30);camera.lookAt(0,0,8);camera.updateMatrixWorld()
+ look.setWeather('sparks')
+ const bolt=w.group.getObjectByName('cloud-lightning'),buffer=bolt.geometry.attributes.position.array
+ const facing=new Vector3();camera.getWorldDirection(facing)
+ const len=Math.hypot(facing.x,facing.z),fx=facing.x/len,fz=facing.z/len,halfWidth=Math.tan(28*Math.PI/180)*camera.aspect
+ // 一次落雷有兩個脈衝，中間閃電會短暫隱藏；以落雷點的經過秒數歸零判斷新的一擊。
+ const strikes=[];let lastAge=Infinity
+ for(let i=0;i<200;i++){
+  look.advance(i*100,.1);w.update(.1,camera)
+  if(w.strike.w>0&&w.strike.z<lastAge){
+   const {x,y:z,w:strength}=w.strike
+   const dx=x-camera.position.x,dz=z-camera.position.z,ahead=dx*fx+dz*fz,side=dz*fx-dx*fz
+   assert.ok(ahead>9.9&&ahead<22.1,`ahead ${ahead.toFixed(2)}`)
+   const off=Math.abs(side)/(ahead*halfWidth);assert.ok(off>.39&&off<.76,`off center ${off.toFixed(2)}`)
+   assert.ok(strength>0);assert.equal(w.strikeGround,terrainAt(x,z))
+   assert.ok(bolt.geometry.drawRange.count>=18*6&&bolt.geometry.drawRange.count<=27*6)
+   assert.equal(bolt.geometry.attributes.position.array,buffer,'the bolt buffer is written in place')
+   strikes.push({x,z})
+  }
+  lastAge=w.strike.w>0?w.strike.z:Infinity
+ }
+ assert.ok(strikes.length>=5,`strikes: ${strikes.length}`)
+ assert.ok(new Set(strikes.map(p=>`${p.x.toFixed(2)},${p.z.toFixed(2)}`)).size===strikes.length,'each strike lands somewhere new')
+ // 減少動態：閃電、落雷光圈與雲中電光都停。
+ look.advance(30000,0,true);w.update(0,camera,true)
+ assert.equal(bolt.visible,false);assert.equal(w.strike.w,0);assert.equal(w.sheet.w,0)
+ w.dispose()
+})
+
+test('lightning strikes and sheet flashes start at least one second apart so the sky never strobes',()=>{
+ // 落雷與雲中電光各有兩個脈衝；任兩次閃光的開始至少相隔 1 秒，任一秒內最多 3 個脈衝。
+ const look=createSceneLook(periodByKey('night')),w=createWeather(new Scene(),{state:look.weather,lowPower:true,ground:terrainAt})
+ const camera=new PerspectiveCamera(56,1440/900,.1,240);camera.position.set(0,9,30);camera.lookAt(0,0,8);camera.updateMatrixWorld()
+ look.setWeather('sparks')
+ const starts=[];let strikeAge=Infinity,sheetAge=Infinity,t=0
+ for(let i=0;i<6000;i++){
+  t+=.02;look.advance(t*1000,.02);w.update(.02,camera)
+  if(w.strike.w>0&&w.strike.z<strikeAge)starts.push({t,kind:'strike'})
+  strikeAge=w.strike.w>0?w.strike.z:Infinity
+  if(w.sheet.w>0&&w.sheet.z<sheetAge)starts.push({t,kind:'sheet'})
+  sheetAge=w.sheet.w>0?w.sheet.z:Infinity
+ }
+ starts.sort((a,b)=>a.t-b.t)
+ assert.ok(starts.filter(s=>s.kind==='strike').length>=30&&starts.filter(s=>s.kind==='sheet').length>=30,'both kinds keep happening')
+ for(let i=1;i<starts.length;i++)assert.ok(starts[i].t-starts[i-1].t>=.999,`${starts[i-1].kind} then ${starts[i].kind} only ${(starts[i].t-starts[i-1].t).toFixed(2)}s apart`)
+ w.dispose()
+})
+
+test('lightning arcs sit on roof edges, fence posts and tree tops, and keep their glow at night',()=>{
+ const v=createVillage({lowPower:false})
+ const arcs=v.scene.getObjectByName('static-arcs'),pos=arcs.geometry.attributes.position
+ assert.ok(pos.count>100,`arcs: ${pos.count}`)
+ for(let i=0;i<pos.count;i++)assert.ok(pos.getY(i)>.9,`arc at y=${pos.getY(i)}`)
+ const before=arcs.material.uniforms.color.value.clone()
+ v.setLook({light:new Color('#9fb4ff'),skyBottom:new Color('#050912'),windows:1})
+ assert.ok(arcs.material.uniforms.color.value.equals(before))
+ v.dispose()
+})
+
+test('sheet lightning glows over the clouds only while a flash is lit',()=>{
+ const sky=createSkyWeather(),glow=sky.frontMeshes.find(m=>m.name==='sheet-lightning')
+ sky.update(1,0,0,new Vector4(.1,.5,.05,.8),1);assert.equal(sky.frontVisible,true);assert.equal(glow.visible,true)
+ sky.update(1,0,0,new Vector4(.1,.5,.5,.8),1);assert.equal(sky.frontVisible,false,'flash over')
+ sky.update(1,0,0,new Vector4(.1,.5,.05,.8),0);assert.equal(sky.frontVisible,false,'reduced motion or no lightning weather')
  sky.dispose()
 })

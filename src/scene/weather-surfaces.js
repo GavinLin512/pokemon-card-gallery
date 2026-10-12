@@ -7,10 +7,11 @@ import { weatherFields } from './weather-shaders.js'
  */
 export function createSurfaceWeather() {
   return {
-    ...Object.fromEntries(['time','wind','leaves','embers','orbs','shards','petals','rain','feathers','mist','night','motion','ground','impactGround']
+    ...Object.fromEntries(['time','wind','leaves','embers','orbs','shards','petals','rain','feathers','mist','night','motion','ground','impactGround','strikeGround']
       .map(key => [key, { value: key === 'motion' ? 1 : 0 }])),
     dragon: { value: new Vector4() },
-    impact: { value: new Vector4() }
+    impact: { value: new Vector4() },
+    strike: { value: new Vector4() }
   }
 }
 
@@ -126,7 +127,16 @@ export function addLandscapeWeather(material, uniforms, { vegetation = false, wa
       if(psychicMist>0.) totalEmissiveRadiance+=vec3(.5,.34,.8)*psychicMist*(.05+wx_night*.12);
       if(crack+shock>0.) totalEmissiveRadiance+=vec3(1.,.4,.08)*crack*exp(-wx_impact.z*2.5)*.8+vec3(1.,.62,.3)*shock*.22;
       if(tendril.y>0.) totalEmissiveRadiance+=vec3(.42,.12,.7)*max(0.,tendril.y-tendril.x)*wx_night*wx_motion*.28;
+      // 雷：落雷點一圈往外擴散的黃色電光與中心閃光，0.45 秒內熄滅；只畫在與落雷點同高的地面，不受夜色減弱。
+      if(wx_strike.w>.001&&wx_strike.z<.45) {
+        float strikeReach=length(wxPosition.xz-wx_strike.xy);
+        float strikeLevel=up*(1.-smoothstep(.4,.8,abs(wxPosition.y-wx_strikeGround)));
+        if(strikeReach<7.&&strikeLevel>0.) {
+          float ring=exp(-abs(strikeReach-wx_strike.z*14.)*2.5)+exp(-strikeReach*strikeReach*.6)*1.5;
+          totalEmissiveRadiance+=vec3(1.,.85,.3)*ring*strikeLevel*(1.-smoothstep(0.,.45,wx_strike.z))*wx_strike.w*.8;
+        }
+      }
     `)
   }
-  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v4-${vegetation}-${water}-${breeze}`
+  material.customProgramCacheKey = () => `${baseKey}-landscape-weather-v5-${vegetation}-${water}-${breeze}`
 }
