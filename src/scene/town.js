@@ -57,6 +57,68 @@ function drawMoon(size) {
   return c
 }
 
+/** 惡屬性白天的日蝕（PLAN §9.4）：暗紫黑的圓盤、粉白日冕與右上一點鑽石環亮光。 */
+function drawEclipse(size) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d'), m = size / 2, r = size * 0.24
+  const corona = ctx.createRadialGradient(m, m, r * 0.9, m, m, size * 0.5)
+  corona.addColorStop(0, 'rgba(255,236,250,0.95)')
+  corona.addColorStop(0.25, 'rgba(230,190,255,0.45)')
+  corona.addColorStop(1, 'rgba(200,160,255,0)')
+  ctx.fillStyle = corona
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#140b1f'
+  ctx.beginPath()
+  ctx.arc(m, m, r, 0, Math.PI * 2)
+  ctx.fill()
+  const x = m + r * 0.7, y = m - r * 0.7
+  const diamond = ctx.createRadialGradient(x, y, 0, x, y, r * 0.5)
+  diamond.addColorStop(0, 'rgba(255,255,255,1)')
+  diamond.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = diamond
+  ctx.fillRect(0, 0, size, size)
+  return c
+}
+
+/** 惡屬性夜晚的紅月：紅色光暈加血紅細月牙，與月亮同大小。 */
+function drawBloodMoon(size) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d'), m = size / 2, r = size * 0.26
+  const glow = ctx.createRadialGradient(m, m, r * 0.7, m, m, size * 0.5)
+  glow.addColorStop(0, 'rgba(255,70,80,0.45)')
+  glow.addColorStop(1, 'rgba(255,70,80,0)')
+  ctx.fillStyle = glow
+  ctx.fillRect(0, 0, size, size)
+  // 月牙先畫在另一張畫布再疊上，挖掉的部分不會連光暈一起挖掉。
+  const crescent = document.createElement('canvas')
+  crescent.width = crescent.height = size
+  const cc = crescent.getContext('2d')
+  cc.fillStyle = '#ff4d5a'
+  cc.beginPath()
+  cc.arc(m, m, r, 0, Math.PI * 2)
+  cc.fill()
+  cc.globalCompositeOperation = 'destination-out'
+  cc.beginPath()
+  cc.arc(m + r * 0.45, m - r * 0.2, r * 0.92, 0, Math.PI * 2)
+  cc.fill()
+  ctx.drawImage(crescent, 0, 0)
+  return c
+}
+
+/** 月亮、日蝕與紅月共用的畫布貼圖設定。 */
+function skyTexture(canvas) {
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  texture.generateMipmaps = false
+  texture.minFilter = LinearFilter
+  texture.magFilter = LinearFilter
+  texture.wrapS = ClampToEdgeWrapping
+  texture.wrapT = ClampToEdgeWrapping
+  return texture
+}
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
@@ -115,23 +177,28 @@ export function createTown(canvas, opts) {
   scene.add(stars.points)
 
   const weather = village.weather
-  // 龍屬性的流星（sky-weather.js），在背景層，村莊的雲與遠景會蓋在前面。
+  // 龍屬性的流星與超能力的極光（sky-weather.js），在背景層，村莊的雲與遠景會蓋在前面。
   const skyWeather = createSkyWeather({ lowPower: state.lowPower })
-  scene.add(skyWeather.mesh)
+  scene.add(...skyWeather.meshes)
+  // 後製效果：每幀寫入同一個物件（熱浪、空間扭曲、格鬥權重與震動位移）。
+  const postEffects = { heat: 0, warp: 0, quake: 0, shakeX: 0, shakeY: 0 }
 
   // 月亮
-  const moonTexture = new CanvasTexture(drawMoon(MOON.size))
-  moonTexture.colorSpace = SRGBColorSpace
-  moonTexture.generateMipmaps = false
-  moonTexture.minFilter = LinearFilter
-  moonTexture.magFilter = LinearFilter
-  moonTexture.wrapS = ClampToEdgeWrapping
-  moonTexture.wrapT = ClampToEdgeWrapping
+  const moonTexture = skyTexture(drawMoon(MOON.size))
   const moonMaterial = new MeshBasicMaterial({ map: moonTexture, transparent: true, opacity: 0, depthTest: false, depthWrite: false })
   const moonMesh = new Mesh(unitPlane, moonMaterial)
   moonMesh.renderOrder = 10
   scene.add(moonMesh)
   const moon = { base: { x: 0, y: 0 }, current: { x: 0, y: 0 }, target: { x: 0, y: 0 } }
+  // 惡屬性：日蝕（清晨、白天、黃昏）與紅月（夜晚）放在月亮的位置；透明度只在套用外觀時寫入，透明時不繪製。
+  const omens = [drawEclipse, drawBloodMoon].map(draw => {
+    const material = new MeshBasicMaterial({ map: skyTexture(draw(MOON.size)), transparent: true, opacity: 0, depthTest: false, depthWrite: false })
+    const mesh = new Mesh(unitPlane, material)
+    mesh.renderOrder = 10
+    mesh.visible = false
+    scene.add(mesh)
+    return { mesh, material }
+  })
 
   // 版面
   function layout() {
@@ -155,6 +222,7 @@ export function createTown(canvas, opts) {
     const moonSize = Math.min(w * MOON.widthFrac, skyH * 0.7)
     const moonTop = Math.max(0.01 * h, Math.min(MOON.y * h, skyH - moonSize * 1.1))
     moonMesh.scale.set(moonSize, moonSize, 1)
+    for (const omen of omens) omen.mesh.scale.set(moonSize, moonSize, 1)
     // HD-2D 的方向光從左上照、影子落在右側，月亮也放左上，與影子方向一致；現行畫風維持右上。
     moon.base.x = (opts.hd2d ? MOON.hd2dX : MOON.x) * w
     moon.base.y = h / 2 - moonSize / 2 - moonTop
@@ -217,6 +285,10 @@ export function createTown(canvas, opts) {
     skyMaterial.uniforms.bottom.value.copy(l.skyBottom)
     stars.setOpacity(l.stars)
     moonMaterial.opacity = l.moon
+    for (const [omen, opacity] of [[omens[0], l.eclipse], [omens[1], l.bloodMoon]]) {
+      omen.material.opacity = opacity
+      omen.mesh.visible = opacity > .001
+    }
   }
 
   function setPeriod(period, immediate = false) {
@@ -260,6 +332,7 @@ export function createTown(canvas, opts) {
     moon.current.x += (moon.target.x - moon.current.x) * smoothing
     moon.current.y += (moon.target.y - moon.current.y) * smoothing
     moonMesh.position.set(moon.base.x + moon.current.x, moon.base.y + moon.current.y, 0)
+    for (const omen of omens) omen.mesh.position.copy(moonMesh.position)
     stars.update(moon.current.x * starFollow, moon.current.y * starFollow, weatherTime)
 
     village.update(state.reducedMotion ? { x: 0, y: 0 } : villagePointer, now, state.reducedMotion, journeyProgress, dt)
@@ -272,16 +345,24 @@ export function createTown(canvas, opts) {
       village.camera.lookAt(target)
     }
     if (lookChanged) applyLook()
-    skyWeather.update(weatherTime, state.reducedMotion ? 0 : sceneLook.weather.weights.rays)
+    const weights = sceneLook.weather.weights
+    skyWeather.update(weatherTime, state.reducedMotion ? 0 : weights.rays, weights.orbs)
     if (!state.reducedMotion) weatherTime += dt
-    const heatStrength = state.reducedMotion ? 0 : sceneLook.environment.heat * (state.lowPower ? .45 : 1)
-    const postActive = post.active(heatStrength)
+    postEffects.heat = state.reducedMotion ? 0 : sceneLook.environment.heat * (state.lowPower ? .45 : 1)
+    postEffects.warp = state.reducedMotion ? 0 : weights.orbs
+    postEffects.quake = state.reducedMotion ? 0 : weights.aura
+    // 格鬥的畫面震動：每一擊後 0.6 秒內衰減，縱向約 4 像素、橫向約 2 像素（1440×900）；impact 為 (x, z, 經過秒數, 強度)。
+    const { impact } = weather
+    const shake = impact.w > 0 && impact.z < .6 ? postEffects.quake * Math.exp(-impact.z * 7) : 0
+    postEffects.shakeX = shake * .0025 * Math.sin(impact.z * 41 + 1.3)
+    postEffects.shakeY = shake * .0045 * Math.sin(impact.z * 52)
+    const postActive = post.active(postEffects)
     renderer.setRenderTarget(postActive ? post.target : null)
     renderer.clear()
     renderer.render(scene, camera)
     renderer.clearDepth()
     renderer.render(village.scene, village.camera)
-    if (postActive) post.render(renderer, weatherTime, heatStrength)
+    if (postActive) post.render(renderer, weatherTime, postEffects)
     // 村民對話框在後製之後畫，保持銳利、不受移軸模糊。
     if (village.overlay) renderer.render(village.overlay, village.camera)
     frameRequested = false
@@ -396,6 +477,7 @@ export function createTown(canvas, opts) {
       document.removeEventListener('visibilitychange', onVisibility)
       moonTexture.dispose()
       moonMaterial.dispose()
+      for (const omen of omens) { omen.material.map.dispose(); omen.material.dispose() }
       village.dispose()
       post.dispose()
       stars.dispose()

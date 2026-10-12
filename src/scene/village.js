@@ -334,7 +334,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
   // 樹看板投下真實的樹形影子（billboards.js）；草叢與村民只接收陰影。
   const treeBillboards = hd2d && treeSprites.length ? createBillboards({
     canvas: drawTreeAtlas(), columns: TREE_VARIANTS, count: treeSprites.length, width: 3.1, height: 4.65,
-    sway: { time: weatherUniforms.time, wind: weatherUniforms.wind }, castShadow: shadowed, sun: sunOffset.clone().normalize(),
+    sway: { time: weatherUniforms.time, wind: weatherUniforms.wind, impact: weatherUniforms.impact }, castShadow: shadowed, sun: sunOffset.clone().normalize(),
     rootShift: TREE_ROOT_SHIFT
   }) : null
   treeSprites.forEach((t, i) => {
@@ -345,13 +345,15 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     treeBillboards.set(i, t.x, groundAt(t.x, t.z), t.z, variant, 0, false, t.s)
   })
   if (treeBillboards) { treeBillboards.commit(); scene.add(treeBillboards.mesh) }
-  const tufts = hd2d ? createTufts({ boxes: groundBoxes, lowPower, sway: { time: weatherUniforms.time, wind: weatherUniforms.wind } }) : null
+  const tufts = hd2d ? createTufts({ boxes: groundBoxes, lowPower, sway: { time: weatherUniforms.time, wind: weatherUniforms.wind, impact: weatherUniforms.impact } }) : null
   if (tufts) scene.add(tufts.mesh)
   const villagers = hd2d ? createVillagers({ lowPower, heightAt: terrainAt }) : null
   if (villagers) scene.add(villagers.group)
   const sign = createSeriesSign({ series, ground: hd2d ? groundAt(SERIES_SIGN.x, SERIES_SIGN.z) : 0, weatherUniforms, breeze: hd2d, shadowed })
   scene.add(sign.group)
   let windTime = 0
+  // 太陽方向：格鬥的夕陽把仰角壓低（setLook 只在外觀過場時計算），每幀沿用。
+  const sunAim = sunOffset.clone()
   const flightPosition = new Vector3()
   const flightTarget = new Vector3()
   const shadowFocus = new Vector3()
@@ -383,7 +385,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
       const step = SHADOW_SPAN * 2 / SHADOW_MAP
       shadowFocus.set(Math.round(shadowFocus.x / step) * step, 0, Math.round(shadowFocus.z / step) * step)
       sun.target.position.copy(shadowFocus)
-      sun.position.copy(shadowFocus).add(sunOffset)
+      sun.position.copy(shadowFocus).add(sunAim)
     }
     weather.update(dt, camera, reduced)
     // 村民依目前屬性天氣（null 為原景）挑對話；時段由 town.js 切換時段時傳入。
@@ -394,11 +396,16 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
     weatherUniforms.wind.value = reduced ? 0 : hd2d ? Math.max(BREEZE, env.wind) : env.wind
     weatherUniforms.motion.value = reduced ? 0 : 1
-    for (const key of ['aura','leaves','embers','orbs','shards','petals','rain','feathers']) {
-      weatherUniforms[key].value = key === 'aura' && reduced ? 0 : sceneLook.weather.weights[key]
+    for (const key of ['leaves','embers','orbs','shards','petals','rain','feathers','mist']) {
+      weatherUniforms[key].value = sceneLook.weather.weights[key]
     }
     const { dragon } = weather
     weatherUniforms.dragon.value.set(dragon.x, dragon.z, dragon.angle, dragon.shadow)
+    // 格鬥衝擊：減少動態時強度為 0，地景與看板都略過。
+    weatherUniforms.impact.value.copy(weather.impact)
+    weatherUniforms.impactGround.value = weather.impactGround
+    // 鏡頭隨地形升降的高度即所在處的地面高度；貼地的暗影觸手與薄紫霧不爬上屋頂。
+    weatherUniforms.ground.value = rise
   }
   function setLook(look, env = sceneLook.environment) {
     weatherUniforms.night.value = look.windows
@@ -414,7 +421,15 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     sign.setNight(look.windows)
     scene.fog.color.copy(look.skyBottom)
     sun.color.copy(look.light)
-    sun.intensity = lighting.sun * (1 - look.windows * 0.65)
+    // 格鬥的夕陽：仰角壓低約 45%（HD-2D 約 45° → 25°）、長度不變，影子拉長；受光面變斜，直射光加強補回亮度。
+    sunAim.copy(sunOffset)
+    if (env.sunLow > 1e-6) {
+      const flat = Math.hypot(sunOffset.x, sunOffset.z), length = sunOffset.length()
+      const elevation = Math.atan2(sunOffset.y, flat) * (1 - env.sunLow * .45)
+      sunAim.set(sunOffset.x / flat * Math.cos(elevation) * length, Math.sin(elevation) * length, sunOffset.z / flat * Math.cos(elevation) * length)
+    }
+    if (!shadowed) sun.position.copy(sunAim)
+    sun.intensity = lighting.sun * (1 - look.windows * 0.65) * (1 + env.sunLow * .5)
     ambient.intensity = lighting.ambient * (1 - look.windows * 0.34) * Math.max(.55, env.light)
     ambient.color.copy(new Color('#d7edff')).lerp(new Color('#879cdb'), look.windows).lerp(env.sky, env.tint*.28)
     glass.emissive.set('#ffc875'); glass.emissiveIntensity = look.windows * 1.4

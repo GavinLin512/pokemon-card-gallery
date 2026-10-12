@@ -32,8 +32,19 @@ float dragonShape(vec2 q, float flap) {
 }
 `
 
+// 格鬥的震地衝擊（2026-10-12）：impact = (x, z, 經過秒數, 強度)，由 weather.js 每幀算出；地景、看板與粒子共用同一個排列。
+// 衝擊波以每秒 7 單位往外推，波前經過後草木朝外伏倒，再以阻尼振動回彈，約 7 單位外不受影響。
+// 回傳朝外的傾倒量（回彈時為負）；呼叫端先以 impact.w 的 uniform 分支略過沒有衝擊的時候。
+export const impactField = `
+float weatherImpactBend(vec2 p, vec4 impact) {
+  float d = length(p - impact.xy), since = impact.z - d / 7.;
+  if (since < 0. || d > 7.) return 0.;
+  return (1. - exp(-since * 25.)) * exp(-since * 2.6) * cos(since * 9.) * (1. - smoothstep(2.5, 7., d)) * impact.w;
+}
+`
+
 // 氣浪的世界座標由地景著色及天氣幾何共用，光照落點不隨鏡頭滑動。
-export const weatherFields = `${breezeField}${dragonField}
+export const weatherFields = `${breezeField}${dragonField}${impactField}
 // 不用 sin 的雜湊（Dave Hoskins）：sin 型雜湊在 Metal 後端遇到 0 附近的整數格子會全部得到 0，雲影整欄消失。
 float weatherHash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -56,17 +67,48 @@ float weatherCloudShade(vec2 p, float t) {
   vec2 q = (p - vec2(t * 1.6, -t * .6)) * .13 + vec2(17.3, 41.9);
   return smoothstep(.46, .6, weatherNoise(q) * .65 + weatherNoise(q * 2.3 + 4.1) * .35);
 }
-float weatherPulse(vec2 p, float t) {
-  float index = clamp(floor((14.-p.y)/11.+.5),0.,17.);
-  vec2 center = vec2(sin(index*3.)*3.,14.-index*11.);
-  float phase = fract(t*.42+index*.618);
-  return exp(-abs(length(p-center)-phase*7.5)*4.)*(1.-phase);
+/** 超能力的貼地薄紫霧：一片片約 5–10 單位的霧緩慢飄移，回傳 0 至 1。 */
+float weatherPsychicMist(vec2 p, float t) {
+  vec2 q = p * .1 + vec2(t * .05, t * .02);
+  return smoothstep(.38, .78, weatherNoise(q) * .6 + weatherNoise(q * 2.6 + vec2(-t * .07, 3.3)) * .4);
+}
+/**
+ * 惡的地面暗影：細長的墨色觸手沿地面緩慢爬行，粗細隨時間脹縮；大範圍的雜訊決定哪幾片地面有觸手。
+ * 回傳 (觸手, 含外圍一圈的範圍)，外圍那圈在夜晚發出紫光。
+ */
+vec2 weatherTendrils(vec2 p, float t) {
+  float coverage = smoothstep(.3, .55, weatherNoise(p * .06 + vec2(5.1 - t * .02, 2.7)));
+  if (coverage <= 0.) return vec2(0.);
+  vec2 q = p * .26 + vec2(t * .04, -t * .06);
+  vec2 warp = vec2(weatherNoise(q * .6 + 3.1), weatherNoise(q * .6 + 9.4)) - .5;
+  float n = weatherNoise(q + warp * 2.6);
+  float ridge = 1. - abs(n * 2. - 1.);
+  // 粗細沿觸手變化（一段粗、一段細到尖），整體隨時間脹縮。
+  float edge = .66 + .2 * weatherNoise(q * 1.9 + 7.7) - .06 * sin(t * .45 + n * 5.);
+  return vec2(smoothstep(edge, edge + .06, ridge), smoothstep(edge - .14, edge, ridge)) * coverage;
+}
+/**
+ * 格鬥衝擊點的放射狀裂痕：9 道沿半徑鋸齒彎折的裂縫，0.1 秒內裂到約 4 單位，2.6 秒內淡掉。
+ * 每一擊的裂紋走向依衝擊點座標而不同。回傳裂縫濃度。
+ */
+float weatherCracks(vec2 p, vec4 impact) {
+  vec2 o = p - impact.xy;
+  float d = length(o), reach = min(1., impact.z * 10.) * 4.;
+  if (d > reach || d < .2) return 0.;
+  float k = atan(o.y, o.x) / 6.2832 * 9. + 4.5, i = floor(k);
+  float jag = (weatherNoise(vec2(d * 1.8, i * 7.3 + impact.x)) - .5) * .5;
+  float center = i + .5 + (weatherHash(vec2(i, floor(impact.x * 3.1 + impact.y * 1.7))) - .5) * .5 + jag;
+  float off = abs(k - center) / 9. * 6.2832 * d, width = .07 * (1. - d / 4.) + .025;
+  return (1. - smoothstep(width * .5, width, off)) * (1. - smoothstep(1.4, 2.6, impact.z));
 }
 `
 
 export const particleVertex = `
 attribute vec4 seed;
 uniform float time, mode, viewport, size;
+// 格鬥的衝擊 (x, z, 經過秒數, 強度) 與衝擊點的地面高度，只有沙塵與碎石讀取。
+uniform vec4 impact;
+uniform float impactGround;
 varying float fade, turn, variant, flip;
 ${weatherFields}
 void main(){
@@ -100,6 +142,33 @@ void main(){
    float facing=pow(max(0.,sin(dot(toCamera,vec3(seed.y-.5,.5,seed.z-.5))*30.+seed.x*6.28)),16.);
    float blink=pow(max(0.,sin(t*(1.1+seed.z*1.2)+seed.x*50.)),14.);
    fade=max(blink,facing*.6); grow=.35+fade*.9; turn=.785*step(.7,seed.y);
+ } else if(mode==16.) {
+   // 念力浮石：每 12 秒一輪，各自錯開被抬起，在半空緩慢自轉、上下浮動，最後幾乎同時落回地面。flip 為被抬起的程度。
+   float cycle=fract(t/12.);
+   float lift=smoothstep(.03+seed.x*.2,.13+seed.x*.2,cycle);
+   float fall=clamp((cycle-.86-seed.z*.02)/.03,0.,1.);
+   p.y+=lift*(.7+seed.y*2.+sin(t*1.3+seed.y*20.)*.15)*(1.-fall*fall);
+   turn=seed.y*6.28+sin(t*.4+seed.x*9.)*1.4*lift;
+   flip=lift*(1.-fall); fade=1.;
+ } else if(mode==17.) {
+   // 衝擊揚起的沙塵：從衝擊點往外推開、稍微升起後淡出。
+   float age=impact.z, ang=seed.y*6.2832, r=(1.-exp(-age*3.))*(2.+seed.z*3.)+seed.x*.5;
+   p=vec3(impact.x+cos(ang)*r,impactGround+.2+age*(.25+seed.x*.5),impact.y+sin(ang)*r);
+   fade=smoothstep(0.,.06,age)*(1.-smoothstep(.5,1.9,age))*step(.001,impact.w); grow=.7+age*.7;
+ } else if(mode==18.) {
+   // 彈跳碎石：沿拋物線往外飛，落地後再小跳一次，接著停在地上淡出。
+   float age=impact.z, ang=seed.y*6.2832, speed=1.4+seed.z*2.2, up=3.+seed.x*2.6, g=16.;
+   float t1=2.*up/g, up2=up*.35, t2=2.*up2/g, a2=max(0.,age-t1);
+   float h=age<t1 ? up*age-.5*g*age*age : (a2<t2 ? up2*a2-.5*g*a2*a2 : 0.);
+   float travel=speed*min(age,t1)+speed*.45*min(a2,t2)+.3;
+   p=vec3(impact.x+cos(ang)*travel,impactGround+.1+h,impact.y+sin(ang)*travel);
+   turn=seed.x*6.28+min(age,t1+t2)*(5.+seed.z*6.)*(seed.y<.5 ? -1. : 1.);
+   fade=(1.-smoothstep(2.,2.6,age))*step(.001,impact.w); flip=0.;
+ } else if(mode==19.) {
+   // 暗處的眼睛：每對各自 7–12 秒一輪，只睜開前 2.6 秒，期間眨兩下。flip 為眼皮張開的比例。
+   float period=7.+seed.y*5., age=fract(t/period+seed.x)*period;
+   fade=smoothstep(0.,.3,age)*(1.-smoothstep(2.3,2.6,age));
+   flip=clamp(min(abs(age-.95),abs(age-1.7))/.09,0.,1.); turn=0.;
  } else if(mode==0. || mode==6.) {
    float gust=sin(t*.85+position.z*.14);
    p.x+=sin(t*.65+seed.y*9.)*1.8+life*5.+gust*.8;
@@ -112,17 +181,8 @@ void main(){
    }
  } else if(mode==1.) {
    p.y+=life*6.;p.x+=sin(t*1.5+seed.y*8.)*(.5+life);p.z+=cos(t+seed.z*9.)*.45;
- } else if(mode==3.) {
-   p.y+=sin(t*.8+seed.x*9.)*.65;p.x+=sin(t*.45+seed.y*8.)*1.1;
-   fade=.65+.3*sin(t*1.1+seed.y*5.);
  } else if(mode==4.) {
    p.x+=sin(t*.25+seed.y*8.)*3.;p.z+=cos(t*.2+seed.x*8.)*1.5;fade=.7;
- } else if(mode==11.) {
-   p.x+=cos(t*.65+seed.x*9.)*2.4;p.z+=sin(t*.65+seed.x*9.)*2.4;
-   p.y+=sin(t*.8+seed.y*8.)*.65;fade=.65+.25*sin(t+seed.y*8.);
- } else if(mode==12.) {
-   float burst=weatherPulse(p.xz,t);p.y+=burst*(.4+seed.z)*1.2;
-   p.x+=sin(seed.y*9.)*burst*.4;p.z+=cos(seed.y*9.)*burst*.4;fade=burst;
  } else {p.y+=life*1.2;p.x+=sin(t*.6+seed.y*8.)*1.2;}
  vec4 view=modelViewMatrix*vec4(p,1.);
  gl_Position=projectionMatrix*view;
@@ -173,19 +233,45 @@ void main(){
    a=exp(-r*r*90.)+(exp(-abs(p.x)*55.-abs(p.y)*6.)+exp(-abs(p.y)*55.-abs(p.x)*6.))*.9;
    a*=1.-smoothstep(.3,.5,r);
    tint=mix(color,vec3(1.),exp(-r*r*160.));
- } else if(mode==12.) {
-   a=1.-smoothstep(.19,.25,abs(p.x)+abs(p.y)*.8);
-   tint*=.7+variant*.3;
- } else if(mode==11.) {
-   a=(1.-smoothstep(.12,.24,abs(p.x)+abs(p.y)*1.5))*.8;
+ } else if(mode==16.||mode==18.) {
+   // 像素碎石：10 格見方、格子對齊螢幕；岩塊輪廓不規則，左上亮、右下暗，邊緣一格加深。
+   // 浮石（16）約四分之一是落葉；被念力抬起時（flip）外圍多一圈粉紫光。
+   vec2 cell=(floor(gl_PointCoord*10.)+.5)/10.-.5;
+   vec2 q=mat2(c,-s,s,c)*cell;
+   float r=length(q), outside;
+   bool leaf=mode==16.&&variant>.75;
+   if(leaf) {
+     float u=q.x/.4;
+     outside=abs(q.y+.05*u*u)-.17*sqrt(max(0.,1.-u*u))+max(0.,abs(u)-1.);
+     // 落葉色以岩石底色換算（橄欖綠到橘黃），夜晚跟著 setLook 一起變暗。
+     tint=color*mix(vec3(1.,1.25,.2),vec3(2.3,.86,.12),fract(variant*7.));
+   } else {
+     float ang=atan(q.y,q.x);
+     outside=r-(.27+.05*sin(ang*3.+variant*21.)+.035*sin(ang*5.+variant*43.));
+     tint=color*(.86+.14*fract(variant*13.));
+   }
+   float body=step(outside,0.);
+   // 明暗依螢幕方向（gl_PointCoord 的 y 往下），岩塊轉動時光仍從左上來。
+   tint*=(1.+.18*dot(cell,vec2(-.7,-.7))/max(length(cell),.05))*(1.-.3*body*step(-.09,outside));
+   float halo=(1.-body)*step(outside,.11)*flip;
+   tint=mix(tint,vec3(.92,.62,1.),halo);
+   a=max(body,halo*.8);
+ } else if(mode==19.) {
+   // 一對像素眼睛：16 格寬，杏仁形、往鼻樑斜下的紅眼，中央一格黃色瞳光，外圍淡淡紅光；眼皮依 flip 闔成一條線。
+   vec2 g=floor(gl_PointCoord*16.);
+   float row=g.y-7., ex=g.x<8. ? g.x-2. : 13.-g.x;
+   float eye=row==0. ? step(0.,ex)*step(ex,4.) : row==-1. ? step(0.,ex)*step(ex,2.) : row==1. ? step(2.,ex)*step(ex,4.) : 0.;
+   eye*=flip>.4||row==0. ? 1. : 0.;
+   eye*=step(.15,flip);
+   float pupil=step(abs(ex-2.),.1)*step(abs(row),.1);
+   tint=mix(color,vec3(1.,.88,.45),pupil);
+   vec2 o=vec2(abs(gl_PointCoord.x-.5)-.25,gl_PointCoord.y-.47);
+   a=max(eye,exp(-dot(o,o)*90.)*.32);
  } else if(mode==10.) {
    // 以 20° 俯角看地面圓圈：縱向壓成 1/2.9 的橢圓環，中心留一點水光；不隨 turn 旋轉。
    p=gl_PointCoord-.5; float r=length(p*vec2(1.,2.9));
    a=1.-smoothstep(.04,.1,abs(r-.37));
    a+=exp(-r*r*30.)*.22;
- } else if(mode==3.) {
-   float r=length(p);a=exp(-r*r*18.);
-   tint+=vec3(.45,.3,.6)*exp(-r*r*110.);a*=1.-smoothstep(.38,.5,r);
  } else if(mode==5.) {
    float r=length(p);a=exp(-r*r*35.);
    a+=exp(-abs(p.x)*80.-abs(p.y)*9.)*.35+exp(-abs(p.y)*80.-abs(p.x)*9.)*.35;

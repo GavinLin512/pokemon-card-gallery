@@ -1,11 +1,13 @@
-import { InstancedMesh, PlaneGeometry, MeshLambertMaterial, MeshDepthMaterial, RGBADepthPacking, DoubleSide, InstancedBufferAttribute, Matrix4, Vector3, CanvasTexture, NearestFilter, SRGBColorSpace } from 'three'
-import { breezeField } from './weather-shaders.js'
+import { InstancedMesh, PlaneGeometry, MeshLambertMaterial, MeshDepthMaterial, RGBADepthPacking, DoubleSide, InstancedBufferAttribute, Matrix4, Vector3, Vector4, CanvasTexture, NearestFilter, SRGBColorSpace } from 'three'
+import { breezeField, impactField } from './weather-shaders.js'
 
 /**
  * 永遠面向鏡頭、保持直立的像素看板（HD-2D 的樹、草叢與村民）。
  * 同一張圖集的所有實例共用一次繪製；每個實例指定圖集欄、列與是否左右翻轉。
  * sway 傳入 { time, wind } uniform 時，看板上端隨風擺動：每個實例依位置取得固定的亂數相位與頻率，
  * 高的看板（樹）擺得慢而幅度大，矮的（草）擺得快；底邊固定不動。
+ * sway 另傳入 impact（格鬥衝擊，見 weather-shaders.js 的 impactField）時，衝擊波經過的看板朝外伏倒再回彈；
+ * 強度為 0 時以 uniform 分支略過（村民不傳，永遠略過）。
  * nearFade 傳入 [起點, 終點]（視線深度）時，太靠近鏡頭的看板以網點逐漸挖空，不會突然巨大地擋住畫面。
  *
  * 看板受場景燈光與陰影影響：法線一律視為朝上，亮度與地面頂面相同，日夜光色、天氣染光與建築的影子都落在看板上。
@@ -26,12 +28,12 @@ export function createBillboards({ canvas, columns, rows = 1, count, width, heig
   geometry.translate(0, 0.5, 0) // 原點在底邊中央，直接站在地面上
   const sprite = new InstancedBufferAttribute(new Float32Array(count * 3), 3)
   geometry.setAttribute('instanceSprite', sprite)
-  const uniforms = { bbTime: sway?.time ?? { value: 0 }, bbWind: sway?.wind ?? { value: 0 }, bbSun: { value: sun ?? new Vector3() } }
+  const uniforms = { bbTime: sway?.time ?? { value: 0 }, bbWind: sway?.wind ?? { value: 0 }, bbImpact: sway?.impact ?? { value: new Vector4() }, bbSun: { value: sun ?? new Vector3() } }
 
   /** 看板的頂點變形，顏色與陰影深度兩個材質共用。陰影階段（depthPass）的 viewMatrix 是光源的視角，平面因此自然面向光源。 */
   function patchVertex(shader, depthPass) {
     Object.assign(shader.uniforms, uniforms)
-    shader.vertexShader = 'attribute vec3 instanceSprite;\nuniform float bbTime, bbWind;\nuniform vec3 bbSun;\nvarying float bbDepth;\n' + breezeField + shader.vertexShader
+    shader.vertexShader = 'attribute vec3 instanceSprite;\nuniform float bbTime, bbWind;\nuniform vec4 bbImpact;\nuniform vec3 bbSun;\nvarying float bbDepth;\n' + breezeField + impactField + shader.vertexShader
       .replace('#include <uv_vertex>', `
         #include <uv_vertex>
         vMapUv = vec2(((instanceSprite.z > .5 ? 1. - uv.x : uv.x) + instanceSprite.x) / ${columns}.,
@@ -50,6 +52,9 @@ export function createBillboards({ canvas, columns, rows = 1, count, width, heig
         float bbSeed = fract(sin(dot(bbCenter.xz, vec2(12.9898, 78.233))) * 43758.5453);
         float bbRate = (2.6 + bbSeed * 1.2) * inversesqrt(max(bbSize.y, 1.));
         float bbSway = breezeSway(bbCenter.xz, bbTime, bbSeed, bbRate) * bbWind * .22 * sqrt(bbSize.y) * pow(position.y, 1.5);
+        // 衝擊波朝外的傾倒投影到看板的左右方向。
+        if (bbImpact.w > .001) bbSway += dot(normalize(bbCenter.xz - bbImpact.xy + vec2(1e-4, 0.)), bbRight.xz)
+          * weatherImpactBend(bbCenter.xz, bbImpact) * .3 * sqrt(bbSize.y) * pow(position.y, 1.5);
         vec3 bbWorld = bbCenter + bbRight * (position.x * bbSize.x + bbSway) + vec3(0., position.y * bbSize.y, 0.);
         ${rootShift ? `vec2 bbTowardSun = normalize(bbSun.xz);
         vec3 bbRoot = vec3(bbTowardSun.x, 0., bbTowardSun.y) * bbSize.x * ${rootShift.toFixed(3)};` : 'vec3 bbRoot = vec3(0.);'}
@@ -77,7 +82,7 @@ export function createBillboards({ canvas, columns, rows = 1, count, width, heig
       `)
     }
   }
-  material.customProgramCacheKey = () => `billboard-v5-${columns}-${rows}-${nearFade}-${rootShift}`
+  material.customProgramCacheKey = () => `billboard-v6-${columns}-${rows}-${nearFade}-${rootShift}`
   const mesh = new InstancedMesh(geometry, material, count)
   // 看板在 shader 內展開，包圍球不準；數量少，直接略過視錐剔除。
   mesh.frustumCulled = false
@@ -86,7 +91,7 @@ export function createBillboards({ canvas, columns, rows = 1, count, width, heig
   if (castShadow) {
     depthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map: texture, alphaTest: 0.5 })
     depthMaterial.onBeforeCompile = shader => patchVertex(shader, true)
-    depthMaterial.customProgramCacheKey = () => `billboard-depth-v3-${columns}-${rows}-${rootShift}`
+    depthMaterial.customProgramCacheKey = () => `billboard-depth-v4-${columns}-${rows}-${rootShift}`
     mesh.customDepthMaterial = depthMaterial
     mesh.castShadow = true
   }
