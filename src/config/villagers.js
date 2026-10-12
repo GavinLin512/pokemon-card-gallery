@@ -46,7 +46,7 @@ export const chatLines = [
   // 屬性天氣（放大卡牌時切換，PLAN §9.4）
   { when: 'any', weather: 'rain', lines: ['下大雨了！', '快找地方躲雨！'] },
   { when: 'any', weather: 'rain', lines: ['傘帶了嗎？', '忘在家裡了。'] },
-  { when: 'any', weather: 'rain', lines: ['屋簷一直在滴水。', '路邊都變小河了。'] },
+  { when: 'any', weather: 'rain', lines: ['屋簷一直在滴水。', '路邊積了好多水。'] },
   { when: 'night', weather: 'rain', lines: ['雨夜好安靜。', '早點回家吧。'] },
   { when: 'any', weather: 'sparks', lines: ['打雷了！', '別站在樹下！'] },
   { when: 'any', weather: 'sparks', lines: ['屋頂在冒電花！', '皮卡丘在附近嗎？'] },

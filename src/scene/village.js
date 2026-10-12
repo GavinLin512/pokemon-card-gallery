@@ -53,7 +53,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
   // 多面岩石原始幾何沒有索引，補齊後可與其他同色模型合併。
   geometry.rock.setIndex(Array.from({ length: geometry.rock.attributes.position.count }, (_, i) => i))
   const trees = [], flowers = [], surfaces = [], glints = []
-  // 草的藤蔓錨點（圍欄柱與牆角，世界座標、已抬上台地）與水的路邊細水流（真新鎮道路邊緣的線段 [x0, z0, x1, z1]，由上游往下游）。
+  // 草的藤蔓錨點（圍欄柱與牆角，世界座標、已抬上台地）與水的路邊積水帶（真新鎮道路邊緣的線段 [x0, z0, x1, z1]）。
   const posts = [], corners = []
   const streams = [
     ...[-1.75, 1.75].flatMap(x => [[x, -18.5, x, -2.7], [x, .7, x, 7.4], [x, 10.6, x, 18.5]]),

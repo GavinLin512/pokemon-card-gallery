@@ -127,8 +127,9 @@ void main(){
    // 地面落點固定，風斜偏移隨高度漸減，終點仍是此 seed 的屋頂／地面。
    p.x+=(p.y-seed.w)*.18; p.z+=(p.y-seed.w)*.08; fade=.85;
  } else if(mode==10.) {
-   // 落地漣漪：貼在屋頂／地面，由小擴大並淡出。
-   p.y=seed.w+.03; grow=.2+life*.8; fade=(1.-life)*(1.-life*.5);
+   // 落地漣漪：貼在屋頂／地面，由小擴大並淡出。2026-10-13 改為像素漣漪：看板大小固定、環在片段著色器裡擴大
+   // （flip 為經過比例），像素格不會跟著變大。
+   p.y=seed.w+.03; flip=life; fade=(1.-life)*(1.-life*.5);
  } else if(mode==14.) {
    // 彈起的水珠：沿拋物線跳起並向外散開，方向由 seed 固定。
    float dir=seed.y*6.2832, hop=sin(life*3.14159);
@@ -371,10 +372,10 @@ void main(){
    vec2 o=vec2(abs(gl_PointCoord.x-.5)-.25,gl_PointCoord.y-.47);
    a=max(eye,exp(-dot(o,o)*90.)*.32);
  } else if(mode==10.) {
-   // 以 20° 俯角看地面圓圈：縱向壓成 1/2.9 的橢圓環，中心留一點水光；不隨 turn 旋轉。
-   p=gl_PointCoord-.5; float r=length(p*vec2(1.,2.9));
-   a=1.-smoothstep(.04,.1,abs(r-.37));
-   a+=exp(-r*r*30.)*.22;
+   // 2026-10-13：像素漣漪。16 格見方、格子對齊螢幕；以 20° 俯角看地面圓圈，縱向壓成 1/2.9 的橢圓環，
+   // 由小擴大（flip 為經過比例）、環寬約一格，剛落下時中心一格水光；不隨 turn 旋轉。
+   vec2 cell=(floor(gl_PointCoord*16.)+.5)/16.-.5; float r=length(cell*vec2(1.,2.9));
+   a=max(step(abs(r-(.08+flip*.3)),.045),step(r,.1)*(1.-flip)*.5);
  } else if(mode==5.) {
    float r=length(p);a=exp(-r*r*35.);
    a+=exp(-abs(p.x)*80.-abs(p.y)*9.)*.35+exp(-abs(p.y)*80.-abs(p.x)*9.)*.35;

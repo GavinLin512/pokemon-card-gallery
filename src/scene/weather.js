@@ -140,8 +140,9 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   particles('vines-posts','leaves',25,0,'#5aa04a',1.05,{anchors:posts,staticEffect:true})
   particles('vines-walls','leaves',25,0,'#5aa04a',2,{anchors:corners,staticEffect:true})
 
-  const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;
-    void main(){vUv=uv;vPhase=phase;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
+  // vWorld：平面上一點的世界座標，給需要跨段連續的圖樣（路邊積水）用。
+  const planeVertex=`attribute float phase;varying vec2 vUv;varying float vPhase,vDistance;varying vec3 vWorld;
+    void main(){vUv=uv;vPhase=phase;vWorld=(modelMatrix*vec4(position,1.)).xyz;vec4 view=modelViewMatrix*vec4(position,1.);vDistance=-view.z;gl_Position=projectionMatrix*view;}`
   /**
    * header：放在 main 之前的著色器函式。placements 每項為 [x, y, z, 寬, 長, 直立, 水平轉角, 傾斜]；
    * 傾斜（弧度）只用於平躺的平面：把 vUv.y 為 1 的那一端（轉角 0 時的 −z 端）抬高，給階梯上的水流。
@@ -159,7 +160,7 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     })
     const geometry=mergeGeometries(parts);parts.forEach(g=>g.dispose())
     const material=new ShaderMaterial({vertexShader:planeVertex,
-      fragmentShader:`uniform float time,opacity;uniform vec3 color;varying vec2 vUv;varying float vPhase,vDistance;${header}
+      fragmentShader:`uniform float time,opacity;uniform vec3 color;varying vec2 vUv;varying float vPhase,vDistance;varying vec3 vWorld;${header}
       void main(){vec3 tint=color;float alpha=0.;${fragment}${effectFragmentEnd}}`,
       uniforms:{time:{value:0},opacity:{value:0},color:{value:new Color(color)}},
       transparent:true,depthWrite:false,depthTest:true,side:DoubleSide,blending:additive?AdditiveBlending:NormalBlending})
@@ -176,7 +177,11 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   for (const [x,z,w,d,y] of [[-7.2,13.7,5.05,5.85,.225],[-12,-134,5.45,5.95,.225]]) {
     for(let i=0;i<(lowPower?24:48);i++) pond.push([x+(Math.random()-.5)*(w-1.2),floorAt(x,z)+y,z+(Math.random()-.5)*(d-1.2),1.1,1.1,false])
   }
-  planes('ripples','rain',pond,ring.replace('time*.42','time*1.2'),'#c0e9ff',{strength:1.1})
+  // 2026-10-13：池塘漣漪改為像素環（14 格見方、環寬約一格）；妖精光圈仍用平滑的 ring。
+  planes('ripples','rain',pond,`
+    vec2 g=(floor(vUv*14.)+.5)/14.;float t=fract(time*1.2+vPhase);float r=length(g-.5)*2.;
+    alpha=step(abs(r-t),.08)*(1.-t);
+  `,'#c0e9ff',{strength:1.1})
   const puddles=Array.from({length:lowPower?75:160},()=>{
     const {x,z}=outdoorPoint(); return [x,floorAt(x,z)+.09,z,1.5+Math.random()*2.5,1.2+Math.random()*2,false]
   })
@@ -197,9 +202,8 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
   `,'#7d98ad',{additive:false,staticEffect:true})
   // 2026-10-12：直立火舌移除（散在道路中央與牆邊，像整座鎮失火）。
   // 無色的動畫風線：面向鏡頭的直立平面（寬高 4:1）上，一段細白線沿起伏的路徑往東滑過，接近尾端時捲一圈後消失。
-  // 2026-10-12：水的細水流。路邊（village.js 的 streams，真新鎮道路邊緣）切成約 2 單位一段的窄平面；
-  // HD-2D 的每座階梯另有兩道沿階梯斜面往下流的水（傾斜平面，高處在階梯頂端）。水紋往 vUv.y 為 0 的下游流。
-  // 水帶沿長邊微微蜿蜒、寬窄不一，深藍水面上一段段淺色水紋往下游流；格子對齊像素。
+  // 2026-10-12：水的細水流：HD-2D 的每座階梯兩道沿階梯斜面往下流的水（傾斜平面，高處在階梯頂端），
+  // 水紋往 vUv.y 為 0 的下游流。水帶沿長邊微微蜿蜒、寬窄不一，深藍水面上一段段淺色水紋往下游流；格子對齊像素。
   const flow=`
     vec2 g=(floor(vUv*vec2(6.,16.))+.5)/vec2(6.,16.);
     float center=.5+sin(g.y*6.+vPhase*9.)*.14, spread=.26+.08*sin(g.y*11.+vPhase*5.);
@@ -208,15 +212,29 @@ export function createWeather(scene, { state, lowPower = false, trees = [], surf
     tint=mix(color*.7,color*1.45,streak);
     alpha=water*(.38+streak*.3);
   `
-  const brooks=[]
+  // 2026-10-13：真新鎮路邊原本是細水流，從開場鏡頭看像一圈藍色虛線繞著建築，改為路邊積水帶：
+  // 沿路邊（village.js 的 streams）斷斷續續、寬窄不一的深色積水，寬 0.9 的平面切成約 2 單位一段。
+  // 寬度、偏移、缺口與漣漪落點都依沿路方向的世界座標（路段都平行座標軸，x + z 即沿路距離），段與段之間連續；
+  // 跟水窪一樣倒映天色、雨滴落下時起像素漣漪，格子對齊 1/10 單位；減少動態時保留積水、不顯示漣漪。
+  const pools=[]
   for (const [x0,z0,x1,z1] of streams) {
     const length=Math.hypot(x1-x0,z1-z0), pieces=Math.max(1,Math.round(length/2)), angle=Math.atan2(x1-x0,z1-z0)
     for (let i=0;i<pieces;i++) {
       const t=(i+.5)/pieces, x=x0+(x1-x0)*t, z=z0+(z1-z0)*t
-      brooks.push([x,floorAt(x,z)+.06,z,.5,length/pieces,false,angle])
+      pools.push([x,floorAt(x,z)+.07,z,.9,length/pieces,false,angle])
     }
   }
-  planes('streams','rain',brooks,flow,'#6f9fc0',{additive:false,strength:.9})
+  planes('roadside-water','rain',pools,`
+    float w=floor((vWorld.x+vWorld.z)*10.)/10., across=(floor(vUv.x*9.)+.5)/9.-.5;
+    float center=.12*sin(w*1.7)+.05*sin(w*4.3);
+    float spread=.12+.2*(.5+.5*sin(w*1.3+1.1))*(.5+.5*sin(w*3.1));
+    float water=step(abs(across-center),spread)*step(.3,.5+.5*sin(w*.9+2.))*step(.2,.5+.5*sin(w*2.3));
+    float cell=floor(w/1.6), age=fract(time*1.1+fract(cell*.4142136));
+    float d=length(vec2(w-cell*1.6-.3-fract(cell*.6180339),(across-center)*.9));
+    float ring=step(abs(d-age*.3),.04)*(1.-age)*step(.001,time)*water;
+    tint=mix(mix(color*.42,color*1.1,smoothstep(-.25,.25,across-center)*.6),color*1.4,ring*.8);
+    alpha=water*(.7+ring*.2);
+  `,'#7d98ad',{additive:false,staticEffect:true})
   const cascades=ground ? STAIRS.flatMap(s=>{
     const run=Math.abs(s.top-s.bottom), along=(s.top+s.bottom)/2, toward=Math.sign(s.top-s.bottom)
     // 平面 −z 端（vUv.y 為 1、傾斜時抬高的一端）轉向階梯頂端。

@@ -88,7 +88,7 @@ test('lightning becomes visible soon, has branched triangles, repeats and stops 
 
 test('enhanced weather stays in world space through travel and clears after interrupted transitions',()=>{
  const {look,v,step}=villageWithLook({lowPower:true});v.resize(390,844)
- const names=['spores','fire-spin','eave-drips','vines-posts','streams','rain-splash','rain-drops','puddles','psychic-stones','impact-dust','impact-rocks','dark-eyes','fairy-rings','steel-glints','wind-lines']
+ const names=['spores','fire-spin','eave-drips','vines-posts','roadside-water','rain-splash','rain-drops','puddles','psychic-stones','impact-dust','impact-rocks','dark-eyes','fairy-rings','steel-glints','wind-lines']
  const originals=new Map(names.map(name=>[name,v.scene.getObjectByName(name).geometry.attributes.position.array.slice()]))
  for(const key of Object.values(weatherByType)) {
   look.setWeather(key)
@@ -146,8 +146,8 @@ test('steel glints sit on roofs and fence posts instead of the open ground',()=>
 
 test('new ground effects avoid buildings and rain splashes share roof stopping heights',()=>{
  const v=createVillage({lowPower:true})
- // 路邊細水流沿真新鎮道路邊緣，不穿進民宅；屋簷滴水掛在屋簷下、離地至少 2 單位。
- const streams=v.scene.getObjectByName('streams').geometry.attributes.position
+ // 路邊積水沿真新鎮道路邊緣，不穿進民宅；屋簷滴水掛在屋簷下、離地至少 2 單位。
+ const streams=v.scene.getObjectByName('roadside-water').geometry.attributes.position
  assert.ok(streams.count>0)
  for(let i=0;i<streams.count;i++) {
   const x=streams.getX(i),z=streams.getZ(i)
