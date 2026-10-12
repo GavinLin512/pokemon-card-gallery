@@ -10,6 +10,7 @@ import { buildTerrain, groundAt, terrainAt, cameraRise } from './terrain.js'
 import { createBillboards } from './billboards.js'
 import { createVillagers } from './villagers.js'
 import { createSceneLook } from './look.js'
+import { createSeriesSign, SERIES_SIGN } from './series-sign.js'
 import { BREEZE } from '../config/weather.js'
 import { periodByKey } from '../config/dayCycle.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -27,8 +28,11 @@ const SPRITE_NIGHT_FLOOR = .2
 /** 像素樹樹幹的半寬（相對看板寬度，48 格中的 4 格）：樹影從樹根朝光源那一側的邊緣開始延伸。 */
 const TREE_ROOT_SHIFT = 4 / 48
 
-/** sceneLook 為場景外觀（look.js），持有天氣權重；未傳入時以白天建立，供單獨建立村莊的測試使用。 */
-export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook = createSceneLook(periodByKey('day')) } = {}) {
+/**
+ * sceneLook 為場景外觀（look.js），持有天氣權重；未傳入時以白天建立，供單獨建立村莊的測試使用。
+ * series 為目前的卡牌系列，決定系列路牌朝外的那一面（PLAN §15.8）。
+ */
+export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook = createSceneLook(periodByKey('day')), series } = {}) {
   const scene = new Scene()
   const clouds = createClouds({ lowPower })
   scene.add(clouds.mesh)
@@ -207,6 +211,8 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     }
   }
   fence(-10, 2.5, 9); fence(3, 10, 15); fence(-1, 17, 20)
+  // 系列路牌的立柱；會翻面的牌面在合併之後另外加入（series-sign.js）。
+  box('#816c50', SERIES_SIGN.x, .43, SERIES_SIGN.z, .16, .86, .16)
   // 花圃：兩排紅花，綠葉與黃色花心。
   box('#639f75', -7.2, 0, 5.7, 7, 0.12, 4)
   for (let row = 0; row < 2; row++) for (let col = 0; col < 5; col++) {
@@ -343,6 +349,8 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
   if (tufts) scene.add(tufts.mesh)
   const villagers = hd2d ? createVillagers({ lowPower, heightAt: terrainAt }) : null
   if (villagers) scene.add(villagers.group)
+  const sign = createSeriesSign({ series, ground: hd2d ? groundAt(SERIES_SIGN.x, SERIES_SIGN.z) : 0, weatherUniforms, breeze: hd2d, shadowed })
+  scene.add(sign.group)
   let windTime = 0
   const flightPosition = new Vector3()
   const flightTarget = new Vector3()
@@ -381,6 +389,7 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     // 村民依目前屬性天氣（null 為原景）挑對話；時段由 town.js 切換時段時傳入。
     villagers?.setWeather(sceneLook.weather.key)
     villagers?.update(Math.min(dt, .1), camera, reduced)
+    sign.update(reduced ? Infinity : Math.min(dt, .1))
     const env = sceneLook.environment
     // HD-2D 晴天也有微風，植物持續輕輕擺動；有風的天氣取較大者。
     weatherUniforms.wind.value = reduced ? 0 : hd2d ? Math.max(BREEZE, env.wind) : env.wind
@@ -397,12 +406,12 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
     weather.setLook(look)
     scene.fog.near = 45 - env.fog * 28
     scene.fog.far = 130 - env.fog * 65
-    for (const [color, mat] of materials) {
-      if (vegetation.has(color)) continue
-      // 場景沒有環境貼圖，金屬度高會把漫射光吃掉、整片變暗；鋼只略提金屬度，光澤靠低粗糙度、星芒與反光帶。
-      mat.roughness = Math.max(.15, .85 - env.wet * .64 - env.metal * .45)
-      mat.metalness = Math.min(.72, env.metal * .1 + env.wet * .14)
-    }
+    // 場景沒有環境貼圖，金屬度高會把漫射光吃掉、整片變暗；鋼只略提金屬度，光澤靠低粗糙度、星芒與反光帶。
+    const roughness = Math.max(.15, .85 - env.wet * .64 - env.metal * .45)
+    const metalness = Math.min(.72, env.metal * .1 + env.wet * .14)
+    for (const [color, mat] of materials) if (!vegetation.has(color)) Object.assign(mat, { roughness, metalness })
+    for (const mat of sign.materials) Object.assign(mat, { roughness, metalness })
+    sign.setNight(look.windows)
     scene.fog.color.copy(look.skyBottom)
     sun.color.copy(look.light)
     sun.intensity = lighting.sun * (1 - look.windows * 0.65)
@@ -422,8 +431,13 @@ export function createVillage({ lowPower = false, hd2d = false, pitch, sceneLook
       villagers?.setLook(floor)
     }
   }
-  return { scene, camera, weather, villagers, resize, update, setLook, overlay: villagers?.overlay ?? null, dispose() {
+  /** 切換系列時路牌翻面；instant 時直接換面（首次載入、減少動態）。 */
+  function setSeries(id, instant = false) {
+    sign.setSeries(id, instant)
+  }
+  return { scene, camera, weather, villagers, seriesSign: sign, resize, update, setLook, setSeries, overlay: villagers?.overlay ?? null, dispose() {
     clouds.dispose()
+    sign.dispose()
     treeBillboards?.dispose()
     tufts?.dispose()
     villagers?.dispose()

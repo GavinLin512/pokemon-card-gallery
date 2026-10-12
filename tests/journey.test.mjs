@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { Vector3, Color, Matrix4 } from 'three'
 import { sampleFlight, progressFromSections } from '../src/scene/journey.js'
 import { createVillage } from '../src/scene/village.js'
+import { SIGN_FACES, SERIES_SIGN } from '../src/scene/series-sign.js'
+import { walkNodes, walkNeighbors } from '../src/scene/walkways.js'
+import { SERIES } from '../src/config/series.js'
 
  test('flight moves north continuously, stays above roofs and looks nearly level', () => {
   let previous = sampleFlight(0).position.clone()
@@ -95,3 +98,52 @@ import { createVillage } from '../src/scene/village.js'
   assert.deepEqual(clouds.position, still, 'reduced motion stops cloud drift')
   village.dispose()
  })
+
+test('series sign has one full pixel face per series', () => {
+  assert.deepEqual(Object.keys(SIGN_FACES).sort(), SERIES.map(s => s.id).sort())
+  const [width, height] = [SIGN_FACES.swsh[0].length, SIGN_FACES.swsh.length]
+  for (const rows of Object.values(SIGN_FACES)) {
+    assert.equal(rows.length, height)
+    for (const row of rows) { assert.equal(row.length, width); assert.match(row, /^[.kbrsgnw]+$/) }
+  }
+})
+
+test('series sign stands in view at the start, off the walkways, and flips to the chosen series', () => {
+  const facing = (village, id) => village.scene.getObjectByName(`series-sign-${id}`).getWorldDirection(new Vector3()).z
+  // 首次載入直接顯示該系列，不翻面。
+  const village = createVillage({ series: '151' })
+  village.resize(390, 844)
+  village.update({ x: 0, y: 0 }, 0, false, 0, 0)
+  village.scene.updateMatrixWorld(true)
+  assert.ok(facing(village, '151') > .99 && !village.seriesSign.turning)
+  // 開場鏡頭看得到路牌（手機直向也在畫面內）。
+  const sign = village.scene.getObjectByName('series-sign')
+  const ndc = sign.getWorldPosition(new Vector3()).project(village.camera)
+  assert.ok(Math.abs(ndc.x) < .9 && Math.abs(ndc.y) < .9 && ndc.z < 1, `sign at ${ndc.x.toFixed(2)},${ndc.y.toFixed(2)}`)
+  // 村民步道離牌面至少一公尺，不會穿過木牌。
+  const gap = (a, b) => {
+    const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((SERIES_SIGN.x - a.x) * dx + (SERIES_SIGN.z - a.z) * dz) / (dx * dx + dz * dz)))
+    return Math.hypot(SERIES_SIGN.x - a.x - dx * t, SERIES_SIGN.z - a.z - dz * t)
+  }
+  walkNodes.forEach((node, i) => walkNeighbors[i].forEach(n => assert.ok(gap(node, walkNodes[n]) > 1.6, `walkway ${i}-${n}`)))
+  // 切換時翻面，結束後換成新系列朝外；連續切換接著轉，不會跳回。
+  village.setSeries('swsh')
+  village.update({ x: 0, y: 0 }, 16, false, 0, .2)
+  assert.ok(village.seriesSign.turning)
+  for (let i = 0; i < 10; i++) village.update({ x: 0, y: 0 }, 16, false, 0, .1)
+  village.scene.updateMatrixWorld(true)
+  assert.ok(facing(village, 'swsh') > .99 && !village.seriesSign.turning)
+  village.setSeries('151')
+  village.update({ x: 0, y: 0 }, 16, false, 0, .1)
+  const midway = sign.rotation.y
+  village.setSeries('swsh')
+  village.update({ x: 0, y: 0 }, 16, false, 0, .01)
+  assert.ok(Math.abs(sign.rotation.y - midway) < .2, 'a quick switch back keeps turning from the current angle')
+  // 減少動態：直接換面；未知系列不動。
+  village.setSeries('151')
+  village.update({ x: 0, y: 0 }, 16, true, 0, 0)
+  village.setSeries('unknown', true)
+  village.scene.updateMatrixWorld(true)
+  assert.ok(facing(village, '151') > .99 && village.seriesSign.series === '151')
+  village.dispose()
+})

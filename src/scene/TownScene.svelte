@@ -30,6 +30,7 @@
       isMobile: viewport.isMobile,
       hd2d: viewport.look === 'hd2d',
       period: dayCycle.period,
+      series: journey.series,
       onReady: onready,
       onError: fail
     }) } catch { fail(); return }
@@ -47,6 +48,9 @@
 
   $effect(() => {
     town?.setPeriod(dayCycle.period)
+  })
+  $effect(() => {
+    town?.setSeries(journey.series)
   })
   $effect(() => {
     town?.setParallaxFrozen(journey.paused || journey.opening)

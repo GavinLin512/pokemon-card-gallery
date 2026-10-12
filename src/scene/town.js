@@ -61,7 +61,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ lowPower: boolean, reducedMotion: boolean, isMobile: boolean, hd2d?: boolean, period: object, onReady?: Function, onError?: Function }} opts
+ * @param {{ lowPower: boolean, reducedMotion: boolean, isMobile: boolean, hd2d?: boolean, period: object, series?: string, onReady?: Function, onError?: Function }} opts
  */
 export function createTown(canvas, opts) {
   const state = {
@@ -85,7 +85,7 @@ export function createTown(canvas, opts) {
   const pitch = opts.hd2d ? HD2D_PITCH : LEVEL_PITCH
   // 場景外觀：日夜與屬性天氣的過場只在進行中才重新合成並套用（look.js）。
   const sceneLook = createSceneLook(opts.period)
-  const village = createVillage({ lowPower: state.lowPower, hd2d: !!opts.hd2d, pitch, sceneLook })
+  const village = createVillage({ lowPower: state.lowPower, hd2d: !!opts.hd2d, pitch, sceneLook, series: opts.series })
   renderer.autoClear = false
   const post = createPostPass({ hd2d: !!opts.hd2d, lowPower: state.lowPower })
   let weatherTime = 0
@@ -323,6 +323,11 @@ export function createTown(canvas, opts) {
     setJourney,
     setPeriod,
     setTilt,
+    /** 卡牌系列切換：系列路牌翻面（減少動態時直接換面）。 */
+    setSeries(id) {
+      village.setSeries(id, state.reducedMotion)
+      requestFrame()
+    },
     /** null 明確恢復原景；卡牌收合不呼叫此方法。 */
     setWeather(key) {
       sceneLook.setWeather(key)

@@ -144,12 +144,15 @@
     history.replaceState({ ...history.state, series: id, journeyPosition: 0 }, '', url)
     return true
   }
-  /** 使用者切換系列：開場畫面停在起點，旅途中則前往該系列第一站。 */
+  /** 旅程地圖切換系列：前往該系列第一站。 */
   function switchSeries(id) {
     if (!applySeries(id)) return
     closePanel(false)
-    if (journey.opening) setPosition(0, true)
-    else navigate(journey.stops[0].id)
+    navigate(journey.stops[0].id)
+  }
+  /** 開場畫面切換系列：留在起點，訪客自己往下捲動就走進新系列的旅程。 */
+  function switchSeriesAtStart(id) {
+    if (applySeries(id)) setPosition(0, true)
   }
   async function navigate(id, cardId = null, record = true) {
     const targetSeries = id ? seriesOfSection(id) : null
@@ -367,7 +370,7 @@
 <main class="journey-stage" class:concealed={journey.panel === 'search' || !!selectedSearchCard} tabindex="-1" aria-label="卡牌旅程" inert={!!journey.panel || !!selectedSearchCard || !journey.entered} data-stop={stop?.id ?? 'travel'}>
   {#if journey.entered}
     {#if journey.opening || (!stop && journey.current.position < .6)}
-      <div class="opening-title" transition:fade|global={motion(220)}><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><div class="series-pick"><SeriesSwitch value={journey.series} onchange={switchSeries} /></div><button class="primary" onclick={() => navigate(journey.stops[0].id)}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
+      <div class="opening-title" transition:fade|global={motion(220)}><p class="eyebrow">從真新鎮，出發。</p><h1>每一張卡牌，<br />都是新的冒險。</h1><p>沿著熟悉的道路，遇見閃閃發光的寶可夢。</p><div class="series-pick"><SeriesSwitch value={journey.series} onchange={switchSeriesAtStart} /></div><button class="primary" onclick={() => navigate(journey.stops[0].id)}>{journey.opening ? '略過開場' : '開始旅程'} <span aria-hidden="true">↓</span></button><small>向下捲動，開始旅程</small><a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noreferrer">卡牌效果 by simeydotme ↗</a></div>
     {:else if stop && cards.length}
       <!-- 離站時標題、卡牌與博士一起淡出；Svelte 5 的轉場預設只在自己的區塊切換時播放，上層 if／key 切換要加 global。 -->
       <div class="stop-heading" class:concealed={journey.expanded} out:fade|global={motion(220)}><p class="eyebrow">{revisit ? '再次相遇' : '發現新的卡種'} <span> / {String(shown.index + 1).padStart(2, '0')}</span></p><h1>{shown.name}</h1></div>
