@@ -32,6 +32,7 @@
   }
 </script>
 
+<div class="search-bar">
 <form class="search" role="search" onsubmit={(e) => e.preventDefault()} bind:this={root}>
   <label class="sr-only" for="card-search">搜尋卡牌</label>
   <input
@@ -78,8 +79,21 @@
     </div>
   {/if}
 </form>
+</div>
 
 <style>
+  /* 捲動結果時搜尋框固定在面板頂端。sticky 停在 .panel-scroll 的 padding 內側，
+     上方 box-shadow 補滿 padding（桌機 24px）、下方 12px 底色遮住捲過去的結果，負 margin 抵銷，未捲動時版面不變 */
+  .search-bar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin-bottom: -12px;
+    padding-bottom: 12px;
+    background: var(--paper);
+    box-shadow: 0 -24px 0 var(--paper);
+  }
+
   .search {
     position: relative;
     display: grid;
