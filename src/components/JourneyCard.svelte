@@ -8,8 +8,10 @@
   let failed = $state(false)
   let version = $state(0)
   function observe(node) {
+    // 凍結區卡牌掛載時 src 先是空字串、onMount 才填網址；兩者隔太久（上一頁、下一頁約 100ms）時瀏覽器會為空 src 發出 error，
+    // 那不是載入失敗，忽略。
     const onError = event => {
-      if (event.target.matches('.card__front img')) failed = true
+      if (event.target.matches('.card__front img') && event.target.getAttribute('src')) failed = true
     }
     node.addEventListener('error', onError, true)
     return { destroy() { node.removeEventListener('error', onError, true) } }
