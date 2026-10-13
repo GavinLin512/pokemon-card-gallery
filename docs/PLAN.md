@@ -662,9 +662,11 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 
 ### 9.7 傾斜感應授權（iOS）
 
-- 只在 `typeof DeviceOrientationEvent.requestPermission === 'function'` 且 `navigator.maxTouchPoints > 0` 時顯示按鈕「開啟傾斜感應」
-  （部分桌機 Chrome 也暴露 requestPermission，以觸控點數過濾）。
-- 授權成功後隱藏按鈕並呼叫凍結區的 `resetBaseOrientation()`；拒絕則顯示「已停用」。
+- 前提：`typeof DeviceOrientationEvent.requestPermission === 'function'` 且 `navigator.maxTouchPoints > 0`。
+  新版 Chrome（含 Android）也有 requestPermission 但預設允許、方向事件直接送達（2026-10-13 起），所以前提成立時先監聽 `deviceorientation` 1 秒：
+  收到 beta 或 gamma 有數值的事件就不顯示按鈕；1 秒內沒有才顯示按鈕「開啟傾斜感應」。
+- 按鈕不收進手機版工具列，紅底、常駐文字並帶呼吸光暈（減少動態時無光暈），讓使用者知道要先點擊。
+- 授權成功後隱藏按鈕並呼叫凍結區的 `resetBaseOrientation()`；拒絕則顯示停用狀態「傾斜已停用」。
 - 授權狀態不持久化（iOS 每次載入都需重新授權）。
 
 ### 9.8 背景音樂 `src/config/bgm.js`（2026-10-11）
@@ -706,6 +708,7 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 | 斷點 | 沿用原作：< 900px 為手機／平板排版 |
 | 觸控目標 | 所有按鈕至少 44×44px |
 | TopBar | 站名縮成圖示，搜尋框點擊展開全寬 |
+| 旅程工具列 | 搜尋、圖鑑、日夜、音樂收成一條 bar 藏在右上把手（‹）左側，預設收合；點把手由右往左滑出，點其他地方、按 Esc 或開啟搜尋／圖鑑面板時收起，面板關閉後焦點回到把手。展開期間站名牌淡出讓位（四字地名在 416px 以下會被 bar 蓋到）。傾斜授權按鈕不收進 bar（§9.7）。桌機維持一排按鈕 |
 | 卡牌格 | 桌機沿用原作三欄格；手機改為一次一張、左右滑動的輪播（原作三張扇形疊放在觸碰時 z-index 交錯）。以 transform 位移而非原生捲動，放大檢視時外框改為不裁切；支援手勢、左右按鈕、方向鍵，顯示中文卡名（規則見 §6.3「卡名中文顯示規則」，例如「太陽伊布 VMAX」；查無對照時為英文）與「第 n 張 / 共 m 張」 |
 | 捕捉按鈕 | 固定底部中央，避開卡牌區 |
 | 圖鑑 | 底部抽屜 |
