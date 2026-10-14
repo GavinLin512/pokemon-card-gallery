@@ -6,29 +6,33 @@
   import { journey } from '../stores/journey.svelte.js'
   import Icon from './Icon.svelte'
 
-  let open = $state(false)
+  // 'auto'：聚焦輸入框自動展開，輸入文字後讓位給搜尋結果、清空再出現；'pinned'：按閃卡按鈕開啟，打字時也保留
+  let mode = $state('closed')
   let root = $state()
+  const shown = $derived(mode === 'pinned' || (mode === 'auto' && !search.query))
 
   // 面板開合不用 blur 判斷（iOS 點按鈕不會取得焦點，blur 會搶在 click 之前關掉面板），改監聽外部點擊與 Escape。
+  // 打字讓面板暫時隱藏時仍要監聽外部點擊，否則離開後再清空搜尋，面板會突然冒出來。
+  // Escape 掛在 window 捕獲階段：App 的 Escape 在 document 捕獲階段先註冊，掛同一層會先關掉整個搜尋抽屜。
   $effect(() => {
-    if (!open) return
+    if (mode === 'closed') return
     const onPointer = (e) => {
-      if (!root.contains(e.target)) open = false
+      if (!root.contains(e.target)) mode = 'closed'
     }
     const onKey = (e) => {
-      if (e.key === 'Escape' && !$activeCard && open) { open = false; e.stopImmediatePropagation() }
+      if (e.key === 'Escape' && !$activeCard && shown) { mode = 'closed'; e.stopImmediatePropagation() }
     }
     document.addEventListener('pointerdown', onPointer)
-    document.addEventListener('keydown', onKey, true)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('keydown', onKey, true)
     }
   })
 
   function pick(id) {
     search.foil = id
-    open = false
+    mode = 'closed'
   }
 </script>
 
@@ -42,7 +46,7 @@
     enterkeyhint="search"
     placeholder={search.foil ? `${search.foilName}：可再輸入名稱` : '輸入寶可夢名稱，例如：皮卡丘 或 Pikachu'}
     bind:value={search.query}
-    onfocus={() => (open = true)}
+    onfocus={() => { if (mode === 'closed') mode = 'auto' }}
   />
   <span class="icon"><Icon name="search" size={20} /></span>
   <div class="tools">
@@ -54,9 +58,9 @@
       class="tool types"
       class:on={!!search.foil}
       aria-label="選擇閃卡類型"
-      aria-expanded={open}
+      aria-expanded={shown}
       aria-controls="foil-panel"
-      onclick={() => (open = !open)}
+      onclick={() => (mode = shown ? 'closed' : 'pinned')}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 2l2.2 6.3L21 10l-6.8 1.7L12 18l-2.2-6.3L3 10l6.8-1.7z" fill="currentColor" />
@@ -66,7 +70,7 @@
     </button>
   </div>
 
-  {#if open}
+  {#if shown}
     <div id="foil-panel" class="panel-pop" role="group" aria-label="閃卡類型">
       <p class="panel-title"><b>{journey.seriesInfo.full}</b> · 點選閃卡類型，或輸入名稱一起找</p>
       <div class="chips">
@@ -154,6 +158,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease;
   }
   .tool:hover {
     background: rgba(0, 0, 0, 0.06);
@@ -168,6 +173,17 @@
   }
   .types.on {
     color: var(--accent-dark);
+  }
+  /* 面板展開時填滿強調色，與收合的透明底區隔；星號改米白，深色星號在 hover 的深紅底上對比不足 */
+  .types[aria-expanded='true'] {
+    color: var(--paper);
+    background: var(--accent);
+  }
+  .types[aria-expanded='true']:hover {
+    background: var(--accent-dark);
+  }
+  .types[aria-expanded='true']:focus-visible {
+    outline-color: var(--ink);
   }
 
   /* 閃卡類型面板：貼在搜尋框下方，手機時撐滿 TopBar 寬度 */
