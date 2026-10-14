@@ -285,18 +285,18 @@ button, a, [tabindex], .card__rotator { -webkit-tap-highlight-color: transparent
    拿掉 .card__front 的 transform 後它不再是堆疊情境，shine、glare 的混合模式失去以卡圖為底的混色群組，
    閃卡層等於直接蓋在卡圖上：VSTAR 與 VMAX 異圖變暗、訓練家全圖泛白。isolation 讓正面重新成為獨立混色群組，不加回任何深度。
    151 的選擇器多一層 .era-151，正面卡圖的 .era-151 .card__rotator img:not(.card__back) 權重 (0,3,1) 高於 .card__front * 的 (0,2,1)，
-   所以卡圖另列權重 (0,3,2) 的選擇器；劍盾同一條規則是 (0,2,1)，靠本檔較晚載入才蓋得過。 */
+   所以卡圖另列權重 (0,3,2) 的選擇器；劍盾同一條規則是 (0,2,1)，靠本檔較晚載入才蓋得過。
+   151 才有的 .card__glitter（特別插圖稀有、超稀有）::before、::after 原本在 translateZ(1px)，* 選不到偽元素，另外列出。
+   曾改用 translateZ(0) 保留獨立合成以維持原本的閃粉混色，Android Chrome 實機仍閃，故改為 none；
+   代價是閃粉細點位置與原設計略有不同（桌機 Chrome 8×8 區塊平均色差約 2/255）。 */
 html[data-flat-foil] .card__front,
 html[data-flat-foil] .card__front *,
 html[data-flat-foil] .card__rotator .card__front img,
 html[data-flat-foil] .card__shine::before,
-html[data-flat-foil] .card__shine::after { transform: none; -webkit-transform: none; transform-style: flat; -webkit-transform-style: flat; }
-html[data-flat-foil] .card__front { isolation: isolate; }
-/* 151 才有的 .card__glitter（特別插圖稀有、超稀有）：::before 與 ::after 原本在 translateZ(1px)，這裡只把深度歸零，不改成 none。
-   改成 none 後兩層不再獨立合成，閃粉的 overlay 混色跟原設計不同（桌機 Chrome 強制平面化實測三到四成像素偏差），
-   translateZ(0) 則與未平面化時一致。 */
+html[data-flat-foil] .card__shine::after,
 html[data-flat-foil] .card__glitter::before,
-html[data-flat-foil] .card__glitter::after { transform: translateZ(0); -webkit-transform: translateZ(0); }
+html[data-flat-foil] .card__glitter::after { transform: none; -webkit-transform: none; transform-style: flat; -webkit-transform-style: flat; }
+html[data-flat-foil] .card__front { isolation: isolate; }
 
 /* 手機閃卡測試路徑（?cardtest=flat,scale,iso,nogl 或 all）：
    只在 <html data-cardtest> 存在時生效，用來驗證手機 Chrome 放大時閃爍破圖的原因。
