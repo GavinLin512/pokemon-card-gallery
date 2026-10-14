@@ -30,7 +30,7 @@ WebKit 與 Gecko 仍把整組交給真正的 3D 合成，Z 排序穩定；Blink 
   的 preserve-3d 與 `.card__back` 的 rotateY(180deg) 負責，第一次放大的 360 度翻轉與卡背不受影響。
 - 同一個條件下另給 `.card__front` 加 `isolation: isolate`（2026-10-11 補上，原因見後果）。
 - 凍結區與第二凍結區不動。`public/css151/cards-151.css` 用相同類別名稱，只多 `.era-151` 前綴；`app.css` 在 `index.html`
-  最後載入，權重相同或更高，兩個系列一併生效。
+  最後載入，多數規則權重相同或更高，但有兩處漏網，2026-10-14 補上（見後果）。
 
 ## 後果
 
@@ -40,5 +40,14 @@ WebKit 與 Gecko 仍把整組交給真正的 3D 合成，Z 排序穩定；Blink 
   以桌機 Chrome 強制加上 `data-flat-foil` 重現，劍盾系列半數像素明顯偏差；加上 `isolation: isolate` 後與未平面化時
   逐像素一致，翻到背面也正常。151 系列實測不受影響，加上後外觀同樣不變。`isolation` 不加回任何 Z 偏移，
   理論上不影響閃爍修正，但仍需以 Android Chrome 實機確認。
+- 2026-10-14 手機回報 151 系列部分卡牌放大仍閃爍、劍盾正常。以 Android UA 掃描正面所有元素與偽元素的計算後 transform，
+  劍盾 0 處殘留，151 有兩處：
+  - 正面卡圖：`.era-151 .card__rotator img:not(.card__back)` 權重 (0,3,1) 高於 `.card__front *` 的 (0,2,1)，每張 151 卡圖都留著
+    `translate3d(0, 0, 0.01px)`。劍盾同一條規則是 (0,2,1)，只靠 `app.css` 較晚載入才蓋過。補上權重 (0,3,2) 的
+    `.card__rotator .card__front img`，桌機 Chrome 強制平面化比對修正前後逐像素一致。
+  - `.card__glitter::before`、`::after`（151 才有，特別插圖稀有與超稀有會顯示）：`*` 選不到偽元素，原清單只列 shine，
+    兩層留在 translateZ(1px)。改成 `transform: none` 會讓兩層不再獨立合成，閃粉混色與原設計偏差三到四成像素；
+    改用 `translateZ(0)` 深度歸零、外觀與未平面化時一致。
+  - 修正後兩個系列各站共 84 個卡牌狀態掃描皆無殘留。是否消除閃爍仍需 Android Chrome 實機確認。
 - 判斷依賴 UA 字串。若日後 Blink 修正壓平行為想比對，需暫時改 `flatFoil` 條件；未保留關閉用的網址參數。
 - 桌機 Chrome 也是 Blink 但未回報問題，暫不套用；若桌機也出現同樣閃爍，把條件放寬為所有 Blink 即可。
