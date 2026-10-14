@@ -84,6 +84,8 @@
     inset: 0;
     width: 100%;
     height: 100%;
+    /* 手機 Chrome 手指上滑收起網址列時，可見區域長到 100lvh，但 inset 與 100% 仍跟著較矮的初始包含區塊，底部會露出一條；改為至少 100lvh 一律蓋滿。 */
+    min-height: 100lvh;
     z-index: -1;
     pointer-events: none;
     display: block;

@@ -91,7 +91,8 @@ body {
   color: var(--ui-fg);
   transition: color 0.6s ease;
   /* 場景 canvas 未掛載或 WebGL 不可用時的天空（§8.4） */
-  background: linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-bottom) 55%, var(--field) 55.2%, var(--field-dark) 100%) fixed;
+  /* 底色取漸層最下方的草地色：手機網址列收起時若露出畫面以外的區域，不會是白色 */
+  background: linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-bottom) 55%, var(--field) 55.2%, var(--field-dark) 100%) fixed var(--field-dark);
   -webkit-font-smoothing: antialiased;
 }
 
