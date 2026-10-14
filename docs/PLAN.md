@@ -877,14 +877,14 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 
 ## 17. 部署與發布（2026-10-13）
 
-部署平台為 Cloudflare Pages，以 Git 整合連接 GitHub `GavinLin512/pokemon-card-gallery`，推送後由 Cloudflare 建置。自訂網域未定。
+部署平台為 Cloudflare Pages，以 Git 整合連接 GitHub `GavinLin512/pokemon-card-gallery`，推送後由 Cloudflare 建置。正式網址為 <https://ptcg-gallery-fan.pages.dev/>（Pages 專案 `ptcg-gallery-fan`）；自訂網域未定。
 
 ### 17.1 分支
 
 | 分支 | 用途 | Cloudflare 部署 |
 |---|---|---|
-| `main` | 日常開發 | 預覽，網址 `main.<專案名>.pages.dev` |
-| `release` | 正式版 | 正式（Production branch 設為 `release`） |
+| `main` | 日常開發 | 預覽，網址 `main.ptcg-gallery-fan.pages.dev` |
+| `release` | 正式版 | 正式（Production branch 設為 `release`），網址 `ptcg-gallery-fan.pages.dev` |
 
 `release` 只從 `main` 快轉（fast-forward），不直接在上面 commit，也不 force push。
 
