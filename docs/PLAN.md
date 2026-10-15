@@ -88,7 +88,8 @@ pokemon-card-gallery/
 │   │   ├── pokedex.svelte.js   我的圖鑑（localStorage）
 │   │   ├── dayCycle.svelte.js  目前時段（自動 + 手動覆寫）
 │   │   ├── bgm.svelte.js       背景音樂：開關、跟隨時段交叉淡化、A/B 雙軌循環（§9.8）
-│   │   └── viewport.svelte.js  是否手機、reduced-motion、低效能旗標
+│   │   ├── directionHint.svelte.js 捲動方向提示的閒置計時與「學會」判斷（§9.10）
+│   │   └── viewport.svelte.js  是否手機、觸控指標、reduced-motion、低效能旗標
 │   ├── components/
 │   │   ├── TopBar.svelte       站名、搜尋框、日夜切換、圖鑑計數、傾斜授權
 │   │   ├── Hero.svelte         頁首：站名、原作者連結、操作提示、展示卡
@@ -101,6 +102,7 @@ pokemon-card-gallery/
 │   │   ├── CaptureButton.svelte 精靈球按鈕與捕捉動畫觸發
 │   │   ├── PokedexDrawer.svelte
 │   │   ├── EntryGate.svelte    進站畫面：載入階段、進入真新鎮按鈕（§9.9）
+│   │   ├── DirectionHint.svelte 捲動方向提示：停靠站閒置 3 秒時貼在卡牌左側（§9.10）
 │   │   └── Icon.svelte         共用線條圖示（搜尋、關閉）：24 格、描邊 1.8、圓端點，新增圖示一律加在這裡
 │   └── scene/
 │       ├── TownScene.svelte    掛載 canvas、串接日夜／activeCard／orientation store（App 以動態 import 延後載入）
@@ -702,6 +704,18 @@ placeholder 改為：「輸入寶可夢名稱，例如：皮卡丘 或 Pikachu�
 - 網址錨點或還原位置：同樣先顯示進站畫面（鏡頭已在該站），按下後不播放下降、直接顯示該站內容；音樂照常處理。
 - 降級：場景失敗或 WebGL 不可用時 `sceneReady` 仍會成立，照常可進站；音樂初始化失敗（`bgm.failed`）時隱藏次按鈕與提示，主按鈕只進站。
 - 驗證：無頭 Chrome 以 CDP 走過點擊進站、靜音進入、Enter 進站、只捲動不進站、靜音訪客、靜音訪客開啟音樂進入、深層連結 `#holo`、390×844、減少動態、放行自動播放的瀏覽器（點擊前 AudioContext 為 running 但無任何 play），無 console error。iOS Safari 與 Android 實機尚未驗收。
+
+### 9.10 捲動方向提示 `src/components/DirectionHint.svelte`（2026-10-15）
+
+- 目的：告訴訪客怎麼沿路前進與後退。前進就是頁面往下捲（`scrollY` 變大），網站不反轉滾輪方向；手指方向依系統的自然／傳統捲動設定而不同，但瀏覽器讀不到這個設定（只有 Safari 有非標準屬性），所以滑鼠版只說「向下捲動」，交給各自的系統對應手勢。
+- 文案依主要指標（`viewport.touch`，`(pointer: coarse)`）而非寬度斷點：
+  - 觸控：上半「↑ 上滑 前進」、下半「下滑 後退 ↓」。
+  - 滑鼠：上半「↑ 向上捲動 後退」、下半「向下捲動 前進 ↓」，底下「或按 ↑ ↓」。
+  - 上半固定放手勢往上的那一項；前進的箭頭上下輕推（減少動態時不動）。最後一站的停留區延伸到旅程終點，只顯示後退。
+- 位置：放在輪播 `.card-stage` 裡，貼著卡牌左側垂直置中（手機間距 12px、桌機 40px），跟著卡牌尺寸走；`pointer-events: none`，不擋滑動與點擊；`aria-hidden`：讀屏的觸控手勢與一般滑動不同，「上滑」會誤導讀屏使用者，桌機底列另有「繼續向下捲動」文字。矮螢幕（max-height 600px，與輪播同一個斷點）拿掉箭頭、縮小間距，避免超出卡牌碰到換卡按鈕。
+- 顯示時機（`src/stores/directionHint.svelte.js`）：只在停靠站、卡牌未放大、沒有開面板或跳站、開場已結束，且 3 秒內沒有任何操作（指標按下／移動、觸控、滾輪、按鍵、捲動、視窗縮放）時淡入；任何操作立刻淡出。
+- 學會後不再出現：訪客這次瀏覽自己往前捲一次（滾輪、觸控拖曳或捲動鍵之後 800ms 內 `scrollY` 變大，且不是跳站）就不再顯示，不寫入 localStorage。往回捲、用地圖或按鈕跳站都不算。
+- 驗證：無頭 Chrome 以觸控 390×844、360×740、375×667、320×568、844×390 與滑鼠 1440×900、700×800、1280×560 確認提示完全在卡牌左側、離視窗邊至少 8px、不碰換卡按鈕；行為上走過閒置出現、操作隱藏、放大與開面板不出現、地圖跳站與往回捲不算學會、最後一站只有後退、滾輪／觸控滑動／方向鍵往前捲後不再出現、減少動態無動畫。`?look=classic` 的手機一般陳列上一張預覽在左側，會被提示蓋住（僅供比對的畫風，不處理）。
 
 ## 10. 手機規則
 

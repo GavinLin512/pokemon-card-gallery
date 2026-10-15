@@ -7,6 +7,7 @@
   import { loadNames, zhCardName } from '../stores/names.svelte.js'
   import { viewport } from '../stores/viewport.svelte.js'
   import JourneyCard from './JourneyCard.svelte'
+  import DirectionHint from './DirectionHint.svelte'
   let { cards, section } = $props()
   // 下方卡名與搜尋結果一樣顯示中文名，並保留地區型態與 VMAX、ex 等英文後綴；對照表載入前或查無對照（例如訓練家卡）時顯示英文名
   loadNames().catch(() => {})
@@ -122,6 +123,7 @@
         <button class="preview next" aria-label={`選擇下一張 ${cards[index + 1].name}`} onclick={() => go(index + 1)} disabled={!!$activeCard}><img src={cards[index + 1].images.small ?? cards[index + 1].images.large} alt="" /></button>
       {/if}
     {/if}
+    <DirectionHint />
   </div>
   <nav class="carousel-pager" aria-label="切換卡牌" inert={!!$activeCard}>
     <button aria-label="上一張" disabled={index === 0} onclick={() => go(index - 1)}>←</button>

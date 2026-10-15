@@ -1,13 +1,16 @@
-// 視窗與裝置旗標（PLAN §8.4、§10）：是否手機、reduced-motion、低效能、WebGL 可用。
+// 視窗與裝置旗標（PLAN §8.4、§10）：是否手機、觸控指標、reduced-motion、低效能、WebGL 可用。
 
 const mobileQuery = matchMedia('(max-width: 899px)')
 const motionQuery = matchMedia('(prefers-reduced-motion: reduce)')
+const touchQuery = matchMedia('(pointer: coarse)')
 
 let isMobile = $state(mobileQuery.matches)
 let reducedMotion = $state(motionQuery.matches)
+let touch = $state(touchQuery.matches)
 
 mobileQuery.addEventListener('change', (e) => (isMobile = e.matches))
 motionQuery.addEventListener('change', (e) => (reducedMotion = e.matches))
+touchQuery.addEventListener('change', (e) => (touch = e.matches))
 
 /**
  * 手機閃卡測試旗標，由網址 ?cardtest= 讀入（逗號分隔）：
@@ -72,6 +75,10 @@ export const viewport = {
   },
   get reducedMotion() {
     return reducedMotion
+  },
+  /** 主要指標為觸控（手機、平板）：捲動方向提示改用滑動說法（PLAN §9.10） */
+  get touch() {
+    return touch
   },
   /** 手機或記憶體少於 4GB：貼圖上限 1024、雲與粒子減半 */
   get lowPower() {
